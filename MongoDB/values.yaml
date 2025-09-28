@@ -1,0 +1,118 @@
+# Global settings
+global:
+  storageClass: "kops-csi-1-21"    # Replace with your storage class name (verify with: kubectl get storageclass)
+
+auth:
+  enabled: true
+  rootPassword: mongodb123
+  rootUser: root
+
+replicaSet:
+  enabled: true
+
+# Number of shards (each shard is a replica set)
+shards: 1  
+
+# Config servers settings
+configsvr:
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      # cpu: "500m"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+              - configsvr
+          topologyKey: kubernetes.io/hostname
+
+# Mongos router settings
+mongos:
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "0.375"
+    limits:
+      memory: "512Mi"
+      # cpu: "1.25"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+              - mongos
+          topologyKey: kubernetes.io/hostname
+
+# Shard (data node) settings; each shard replica set has one or more data nodes
+shardsvr:
+  dataNode:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 12Gi
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "0.375"
+      limits:
+        memory: "1024Mi"
+        cpu: "0.5"
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+              - shardsvr
+          topologyKey: kubernetes.io/hostname
+    lifecycleHooks:
+      postStart:
+        exec:
+          command:
+            - /bin/bash
+            - -c
+            - |
+              PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
+              MONGO_USER="${MONGODB_ROOT_USER:-root}"
+              MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
+              MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
+              HOSTNAME="$(hostname -f)"
+              if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
+                mongosh "$MONGO_URI" --eval "rs.status()" | grep "$HOSTNAME" || \
+                mongosh "$MONGO_URI" --eval "rs.add('$HOSTNAME:27017')" || true
+              fi
+      preStop:
+        exec:
+          command:
+            - /bin/bash
+            - -c
+            - |
+              PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
+              MONGO_USER="${MONGODB_ROOT_USER:-root}"
+              MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
+              MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
+              HOSTNAME="$(hostname -f)"
+              if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
+                mongosh "$MONGO_URI" --eval "rs.remove('$HOSTNAME:27017')" || true
+              fi

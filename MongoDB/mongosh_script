@@ -1,0 +1,3 @@
+cfg = rs.conf()
+cfg.members = [cfg.members[0]]
+rs.reconfig(cfg, { force: true })

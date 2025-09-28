@@ -1,0 +1,32 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: shard0-data-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: my-mongodb-sharded-shard0-data
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 90
+      stabilizationWindowSeconds: 150
+    scaleDown:
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 90
+      stabilizationWindowSeconds: 150
