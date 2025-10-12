@@ -19,7 +19,7 @@ contexts:
     cluster: chirag-m5a-large-0905-010735.k8s.local
     user: chirag-m5a-large-0905-010735.k8s.local
   name: chirag-m5a-large-0905-010735.k8s.local
-current-context: chirag-m5a-large-0905-010735.k8s.local
+current-context: chirag-m5a-large-0829-234827.k8s.local
 kind: Config
 preferences: {}
 users:

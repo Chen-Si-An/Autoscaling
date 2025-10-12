@@ -1,0 +1,61 @@
+# Argo Events EventSource and Sensor for Alertmanager webhook
+---
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: alertmanager-webhook
+  namespace: argo
+spec:
+  webhook:
+    alert:
+      port: 12000
+      endpoint: /trigger
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: trigger-workflow
+  namespace: argo
+spec:
+  dependencies:
+    - name: alertmanager-webhook
+      eventSourceName: alertmanager-webhook
+      eventName: alert
+  triggers:
+    - template:
+        name: argo-workflow-trigger
+        argoWorkflow:
+          group: argoproj.io
+          version: v1alpha1
+          resource: workflows
+          operation: submit
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: mongodb-shard-scale-
+                namespace: argo
+              spec:
+                entrypoint: helm-upgrade
+                templates:
+                  - name: helm-upgrade
+                    container:
+                      image: ghcr.io/chen-si-an/helm-runner:latest
+                      command: ["/bin/sh", "-c"]
+                      args:
+                        - |
+                          helm repo add bitnami https://charts.bitnami.com/bitnami && \
+                          helm repo update && \
+                          helm upgrade my-mongodb-sharded bitnami/mongodb-sharded \
+                            --namespace default \
+                            --values /config/values.yaml \
+                            --kubeconfig /config/kubeconfig
+                      volumeMounts:
+                        - name: config-volume
+                          mountPath: /config
+                    volumes:
+                      - name: config-volume
+                        configMap:
+                          name: my-helm-config
+                    serviceAccountName: argo-helm-sa

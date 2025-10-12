@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: mongodb-shard-scale
+  namespace: argo
+spec:
+  entrypoint: helm-upgrade
+  templates:
+    - name: helm-upgrade
+      container:
+        image: ghcr.io/chen-si-an/helm-runner:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "==== KUBECONFIG CONTEXTS ====" && \
+            kubectl config get-contexts --kubeconfig /config/kubeconfig && \
+            echo "==== NAMESPACES ====" && \
+            kubectl get ns --kubeconfig /config/kubeconfig && \
+            echo "==== HELM RELEASES IN default ====" && \
+            helm list --namespace default --kubeconfig /config/kubeconfig && \
+            echo "==== HELM UPGRADE ====" && \
+            helm repo add bitnami https://charts.bitnami.com/bitnami && \
+            helm repo update && \
+            helm upgrade my-mongodb-sharded bitnami/mongodb-sharded \
+              --namespace default \
+              --values /config/values.yaml \
+              --kubeconfig /config/kubeconfig
+        volumeMounts:
+          - name: config-volume
+            mountPath: /config
+      volumes:
+        - name: config-volume
+          configMap:
+            name: my-helm-config
+      serviceAccountName: argo-helm-sa

@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mongodb-autoscale-rule
+  namespace: monitoring
+spec:
+  groups:
+  - name: mongodb-autoscale
+    rules:
+    - alert: MongoDBHighCPU
+      expr: sum(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"my-mongodb-sharded.*"}[5m])) > 0.5
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "MongoDB CPU usage is high"
+        description: "MongoDB CPU usage above 0.5 cores for 2 minutes"

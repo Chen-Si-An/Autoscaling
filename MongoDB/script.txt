@@ -47,3 +47,28 @@ bin/ycsb.sh load mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb:/
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin" -threads 10 > logs/run_10.log
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=secondary" -threads 10 > logs/run_10.log
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=nearest" -threads 10 -target 4000 2>&1 | tee logs/run_10.log
+
+
+kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
+kubectl create configmap my-helm-config --from-file=values.yaml="./values.yaml" --from-file=kubeconfig="./config" -n argo
+kubectl create configmap my-helm-config --from-file=values.yaml=./values.yaml --from-file=kubeconfig=./config -n argo --dry-run=client -o yaml | kubectl apply -f -
+argo submit add-shard-workflow.yaml  -n argo
+
+echo $PAT | docker login ghcr.io -u Chen-Si-An --password-stdin
+docker buildx build --platform linux/amd64 -t ghcr.io/chen-si-an/helm-runner:latest .
+docker push ghcr.io/chen-si-an/helm-runner:latest
+
+kubectl get secret alertmanager-kps-kube-prometheus-stack-alertmanager -n monitoring -o jsonpath="{.data.alertmanager\.yaml}" | base64 -d > alertmanager.yaml
+
+receivers:
+  - name: argo-events
+    webhook_configs:
+      - url: 'http://alertmanager-webhook.argo-events.svc.cluster.local:12000/trigger'
+  - name: "null"
+route:
+  receiver: argo-events
+  # ...existing route config...
+
+kubectl create secret generic alertmanager-kps-kube-prometheus-stack-alertmanager --from-file=alertmanager.yaml -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl delete pod alertmanager-kps-kube-prometheus-stack-alertmanager-0 -n monitoring

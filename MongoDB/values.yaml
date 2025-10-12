@@ -88,33 +88,33 @@ shardsvr:
               values:
               - shardsvr
           topologyKey: kubernetes.io/hostname
-    lifecycleHooks:
-      postStart:
-        exec:
-          command:
-            - /bin/bash
-            - -c
-            - |
-              PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
-              MONGO_USER="${MONGODB_ROOT_USER:-root}"
-              MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
-              MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
-              HOSTNAME="$(hostname -f)"
-              if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
-                mongosh "$MONGO_URI" --eval "rs.status()" | grep "$HOSTNAME" || \
-                mongosh "$MONGO_URI" --eval "rs.add('$HOSTNAME:27017')" || true
-              fi
-      preStop:
-        exec:
-          command:
-            - /bin/bash
-            - -c
-            - |
-              PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
-              MONGO_USER="${MONGODB_ROOT_USER:-root}"
-              MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
-              MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
-              HOSTNAME="$(hostname -f)"
-              if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
-                mongosh "$MONGO_URI" --eval "rs.remove('$HOSTNAME:27017')" || true
-              fi
+    # lifecycleHooks:
+    #   postStart:
+    #     exec:
+    #       command:
+    #         - /bin/bash
+    #         - -c
+    #         - |
+    #           PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
+    #           MONGO_USER="${MONGODB_ROOT_USER:-root}"
+    #           MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
+    #           MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
+    #           HOSTNAME="$(hostname -f)"
+    #           if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
+    #             mongosh "$MONGO_URI" --eval "rs.status()" | grep "$HOSTNAME" || \
+    #             mongosh "$MONGO_URI" --eval "rs.add('$HOSTNAME:27017')" || true
+    #           fi
+    #   preStop:
+    #     exec:
+    #       command:
+    #         - /bin/bash
+    #         - -c
+    #         - |
+    #           PRIMARY_POD="my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local"
+    #           MONGO_USER="${MONGODB_ROOT_USER:-root}"
+    #           MONGO_PASS="$(cat ${MONGODB_ROOT_PASSWORD_FILE})"
+    #           MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASS@$PRIMARY_POD:27017/admin"
+    #           HOSTNAME="$(hostname -f)"
+    #           if [ "$HOSTNAME" != "$PRIMARY_POD" ]; then
+    #             mongosh "$MONGO_URI" --eval "rs.remove('$HOSTNAME:27017')" || true
+    #           fi
