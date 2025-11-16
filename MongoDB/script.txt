@@ -20,8 +20,8 @@ kubectl config current-context
 
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
-helm install my-mongodb-sharded bitnami/mongodb-sharded -f values.yamls
-helm upgrade my-mongodb-sharded bitnami/mongodb-sharded -f values.yaml
+helm install my-mongodb-sharded bitnami/mongodb-sharded -f ./MongoDB/values.yaml
+helm upgrade my-mongodb-sharded bitnami/mongodb-sharded -f ./MongoDB/values.yaml
 helm list
 helm uninstall my-mongodb-sharded
 
