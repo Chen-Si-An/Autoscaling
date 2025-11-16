@@ -15,6 +15,12 @@ To connect to your database from outside the cluster execute the following comma
     kubectl port-forward --namespace default svc/my-mongodb-sharded 27017:27017 &
     mongosh --host 127.0.0.1 --authenticationDatabase admin -p $MONGODB_ROOT_PASSWORD
 
+kubectl config use-context chirag-m5a-large-0829-234827.k8s.local
+kubectl config current-context
+
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+helm install my-mongodb-sharded bitnami/mongodb-sharded -f values.yamls
 helm upgrade my-mongodb-sharded bitnami/mongodb-sharded -f values.yaml
 helm list
 helm uninstall my-mongodb-sharded
@@ -25,6 +31,8 @@ kubectl delete pvc --all
 kubectl debug node/i-00e1a4a5107cf9eb1 -it --image=ubuntu:22.04 -- bash
 kubectl exec -it node-debugger-i-093591b6ac0fe5d96-r75lt -- bash
 
+kubectl expose deployment my-mongodb-sharded-mongos --type=NodePort --name my-mongodb-sharded-nodeport --port=27017 --target-port=27017
+kubectl get svc my-mongodb-sharded-nodeport
 kubectl run --namespace default my-mongodb-sharded-client --rm --tty -i --restart='Never' --image docker.io/bitnami/mongodb-sharded:8.0.13-debian-12-r0 --command -- mongosh admin --host my-mongodb-sharded --authenticationDatabase admin -u root -p mongodb123
 kubectl run --namespace default my-mongodb-sharded-client --rm --tty -i --restart='Never' --image docker.io/bitnami/mongodb-sharded:8.0.13-debian-12-r0 --command -- mongosh admin --host my-mongodb-sharded-shard0-data-0.my-mongodb-sharded-headless.default.svc.cluster.local:27017 --authenticationDatabase admin -u root -p mongodb123
 kubectl exec -it my-mongodb-sharded-shard0-data-0 -- mongosh -u root -p mongodb123  --authenticationDatabase admin
@@ -37,6 +45,11 @@ cfg = rs.conf()
 cfg.members[0].priority = 2
 cfg.members = [cfg.members[0]]
 rs.reconfig(cfg, {force: true})
+use admin
+db.adminCommand({ movePrimary: "ycsb", to: "my-mongodb-sharded-shard-0" })
+db.adminCommand({ removeShard: "my-mongodb-sharded-shard-1" })
+db.adminCommand({ listShards: 1 })
+db.getSiblingDB("ycsb").dropDatabase()
 
 kubectl run ycsb-test --image=maven:3.8-openjdk-11 --rm -it --restart=Never -- bash
 kubectl run ycsb-test-1 --rm -it --restart=Never --image=maven:3.8-openjdk-11 --overrides='{"apiVersion": "v1", "spec": {"nodeSelector": {"kubernetes.io/hostname": "i-0f2b3dba87cbc381b"}}}'  -- bash
@@ -47,6 +60,39 @@ bin/ycsb.sh load mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb:/
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin" -threads 10 > logs/run_10.log
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=secondary" -threads 10 > logs/run_10.log
 bin/ycsb.sh run mongodb -s   -P workloads/workloadr   -p mongodb.url="mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=nearest" -threads 10 -target 4000 2>&1 | tee logs/run_10.log
+
+
+go install sigs.k8s.io/kubebuilder/cmd/kubebuilder@latest
+go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+go install sigs.k8s.io/kustomize/kustomize/v5@latest
+
+go mod init github.com/Chen-Si-An/mongorouter-autoscaler
+kubebuilder init --domain mongodb.io --owner "Chen-Si-An"
+kubebuilder create api --group autoscale --version v1alpha1 --kind MongoRouterAutoscaler
+
+make generate
+make manifests
+
+make docker-buildx IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
+make docker-buildx PLATFORMS="linux/amd64" IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
+make docker-push IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
+make deploy IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
+kubectl rollout restart deploy/mongorouter-autoscaler-controller-manager -n mongorouter-autoscaler-system
+
+kubectl apply -f example/mongos-autoscaler.yaml
+kubectl create secret generic mongos-admin-uri \
+  -n default \
+  --from-literal=uri='mongodb://root:<password>@my-mongodb-sharded.default.svc.cluster.local:27017/admin?authSource=admin'
+
+kubectl -n mongorouter-autoscaler-system logs deploy/mongorouter-autoscaler-controller-manager -c manager -f --timestamps
+kubectl get pods -l job-name=removeshard-shard1
+
+
+
+
+
+
+
 
 
 kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
