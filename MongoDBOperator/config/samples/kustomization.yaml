@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- autoscaler_v1alpha1_mongosautoscaler.yaml
+- autoscaler_v1alpha1_mongodautoscaler.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

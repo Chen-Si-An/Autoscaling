@@ -1,0 +1,9 @@
+apiVersion: autoscaler.mongodb.io/v1alpha1
+kind: MongosAutoscaler
+metadata:
+  labels:
+    app.kubernetes.io/name: mongodboperator
+    app.kubernetes.io/managed-by: kustomize
+  name: mongosautoscaler-sample
+spec:
+  # TODO(user): Add fields here

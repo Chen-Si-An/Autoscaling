@@ -1,0 +1,35 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - autoscaler.mongodb.io
+  resources:
+  - mongodautoscalers
+  - mongosautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - autoscaler.mongodb.io
+  resources:
+  - mongodautoscalers/finalizers
+  - mongosautoscalers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - autoscaler.mongodb.io
+  resources:
+  - mongodautoscalers/status
+  - mongosautoscalers/status
+  verbs:
+  - get
+  - patch
+  - update
