@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mongodb-autoscaling
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Chen-Si-An/Autoscaling.git
+    targetRevision: main
+    path: MongoDB
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mongodb
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
