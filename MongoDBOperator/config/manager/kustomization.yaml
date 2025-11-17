@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: docker.io/b00611024/mongodb-autoscaler
-  newTag: v0.0.1
+  newTag: test

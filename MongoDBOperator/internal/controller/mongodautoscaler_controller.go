@@ -24,6 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -126,6 +129,16 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	desired := curr
 	if r.IsScaling == 0 {
+		balancerRunning, err := r.isBalancerRunning(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to check balancer status")
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+		if balancerRunning {
+			log.Info("Balancer is currently running, skipping scaling checks")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
 		switch {
 		case avgCPU > target+tol && curr < max:
 			desired = curr + 1
@@ -315,6 +328,39 @@ func (r *MongodAutoscalerReconciler) currentShardNamesBitnami(ctx context.Contex
 	}
 	sort.Strings(names)
 	return names
+}
+
+func (r *MongodAutoscalerReconciler) isBalancerRunning(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) (bool, error) {
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: mda.Namespace, Name: mda.Spec.Router.SecretRef.Name}, &secret); err != nil {
+		return false, fmt.Errorf("failed to fetch secret %s: %w", mda.Spec.Router.SecretRef.Name, err)
+	}
+
+	// Extract the URI value from the secret
+	uriBytes, exists := secret.Data["uri"]
+	if !exists {
+		return false, fmt.Errorf("key 'uri' not found in secret %s", mda.Spec.Router.SecretRef.Name)
+	}
+	uri := string(uriBytes)
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return false, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+	defer client.Disconnect(ctx)
+
+	adminDB := client.Database("admin")
+	var result bson.M
+	err = adminDB.RunCommand(ctx, bson.D{{Key: "balancerStatus", Value: 1}}).Decode(&result)
+	if err != nil {
+		return false, fmt.Errorf("failed to query balancer status: %w", err)
+	}
+
+	// Check the "inBalancerRound" field
+	if inBalancerRound, ok := result["inBalancerRound"].(bool); ok {
+		return inBalancerRound, nil
+	}
+	return false, fmt.Errorf("unexpected response format: %v", result)
 }
 
 func (r *MongodAutoscalerReconciler) createBitnamiShard(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) error {
