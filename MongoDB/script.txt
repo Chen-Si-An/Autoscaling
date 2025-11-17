@@ -75,7 +75,7 @@ make manifests
 
 make docker-buildx PLATFORMS="linux/amd64" IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
 make deploy IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
-kubectl rollout restart deploy/mongorouter-autoscaler-controller-manager -n mongodboperator-system
+kubectl rollout restart deploy/mongodboperator-controller-manager -n mongodboperator-system
 
 kubectl create secret generic mongos-admin-uri \
   -n default \
