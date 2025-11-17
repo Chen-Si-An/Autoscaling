@@ -17,11 +17,68 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+type BitnamiHelm struct {
+	// +required
+	ReleaseName string `json:"releaseName"`
+	// +required
+	ReleaseNamespace string `json:"releaseNamespace"`
+	// +optional
+	ControllerManaged bool `json:"controllerManaged,omitempty"`
+}
+
+type ShardTarget struct {
+	// +required
+	Namespace string `json:"namespace"`
+	// +required
+	NamePrefix string `json:"namePrefix"`
+	// +required
+	ServicePort int32 `json:"servicePort"`
+	// +optional
+	StorageClass string `json:"storageClass,omitempty"`
+}
+
+type ShardScaleBounds struct {
+	// +required
+	MinShards int `json:"minShards"`
+	// +required
+	MaxShards int `json:"maxShards"`
+}
+
+type ShardPolicy struct {
+	// +required
+	CpuTargetPercent int `json:"cpuTargetPercent"`
+	// +required
+	TolerancePercent int `json:"tolerancePercent"`
+	// +required
+	Window string `json:"window"`
+	// +required
+	CooldownSeconds int `json:"cooldownSeconds"`
+}
+
+type Prometheus struct {
+	// +required
+	URL string `json:"url"`
+}
+
+type SecretKeyRef struct {
+	// +required
+	Name string `json:"name"`
+	// +required
+	Key string `json:"key"`
+}
+
+type Router struct {
+	// SecretRef points to a Secret containing a key "uri" with a MongoDB connection string that has admin privileges
+	// +required
+	SecretRef corev1.SecretReference `json:"secretRef"`
+}
 
 // MongodAutoscalerSpec defines the desired state of MongodAutoscaler
 type MongodAutoscalerSpec struct {
@@ -33,6 +90,18 @@ type MongodAutoscalerSpec struct {
 	// foo is an example field of MongodAutoscaler. Edit mongodautoscaler_types.go to remove/update
 	// +optional
 	Foo *string `json:"foo,omitempty"`
+	// +required
+	Bitnami *BitnamiHelm `json:"bitnami"`
+	// +required
+	Target ShardTarget `json:"target"`
+	// +required
+	ScaleBounds ShardScaleBounds `json:"scaleBounds"`
+	// +required
+	Policy ShardPolicy `json:"policy"`
+	// +required
+	Prometheus Prometheus `json:"prometheus"`
+	// +required
+	Router Router `json:"router"`
 }
 
 // MongodAutoscalerStatus defines the observed state of MongodAutoscaler.
@@ -56,6 +125,15 @@ type MongodAutoscalerStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// +optional
+	LastScaleTime metav1.Time `json:"lastScaleTime,omitempty"`
+	// +optional
+	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
+	// +optional
+	LastDesiredShards int32 `json:"lastDesiredShards,omitempty"`
+	// +listType=set
+	// +optional
+	CurrentShardNames []string `json:"currentShardNames,omitempty"`
 }
 
 // +kubebuilder:object:root=true

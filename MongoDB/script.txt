@@ -73,18 +73,15 @@ kubebuilder create api --group autoscale --version v1alpha1 --kind MongoRouterAu
 make generate
 make manifests
 
-make docker-buildx IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
-make docker-buildx PLATFORMS="linux/amd64" IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
-make docker-push IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
-make deploy IMG=ghcr.io/chen-si-an/mongorouter-autoscaler:v0.1.0
-kubectl rollout restart deploy/mongorouter-autoscaler-controller-manager -n mongorouter-autoscaler-system
+make docker-buildx PLATFORMS="linux/amd64" IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
+make deploy IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
+kubectl rollout restart deploy/mongorouter-autoscaler-controller-manager -n mongodboperator-system
 
-kubectl apply -f example/mongos-autoscaler.yaml
 kubectl create secret generic mongos-admin-uri \
   -n default \
   --from-literal=uri='mongodb://root:<password>@my-mongodb-sharded.default.svc.cluster.local:27017/admin?authSource=admin'
 
-kubectl -n mongorouter-autoscaler-system logs deploy/mongorouter-autoscaler-controller-manager -c manager -f --timestamps
+kubectl -n mongodboperator-system logs deploy/mongodboperator-controller-manager -c manager -f --timestamps
 kubectl get pods -l job-name=removeshard-shard1
 
 

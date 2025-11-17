@@ -39,10 +39,97 @@ spec:
           spec:
             description: spec defines the desired state of MongodAutoscaler
             properties:
+              bitnami:
+                properties:
+                  controllerManaged:
+                    type: boolean
+                  releaseName:
+                    type: string
+                  releaseNamespace:
+                    type: string
+                required:
+                - releaseName
+                - releaseNamespace
+                type: object
               foo:
                 description: foo is an example field of MongodAutoscaler. Edit mongodautoscaler_types.go
                   to remove/update
                 type: string
+              policy:
+                properties:
+                  cooldownSeconds:
+                    type: integer
+                  cpuTargetPercent:
+                    type: integer
+                  tolerancePercent:
+                    type: integer
+                  window:
+                    type: string
+                required:
+                - cooldownSeconds
+                - cpuTargetPercent
+                - tolerancePercent
+                - window
+                type: object
+              prometheus:
+                properties:
+                  url:
+                    type: string
+                required:
+                - url
+                type: object
+              router:
+                properties:
+                  secretRef:
+                    description: SecretRef points to a Secret containing a key "uri"
+                      with a MongoDB connection string that has admin privileges
+                    properties:
+                      name:
+                        description: name is unique within a namespace to reference
+                          a secret resource.
+                        type: string
+                      namespace:
+                        description: namespace defines the space within which the
+                          secret name must be unique.
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                required:
+                - secretRef
+                type: object
+              scaleBounds:
+                properties:
+                  maxShards:
+                    type: integer
+                  minShards:
+                    type: integer
+                required:
+                - maxShards
+                - minShards
+                type: object
+              target:
+                properties:
+                  namePrefix:
+                    type: string
+                  namespace:
+                    type: string
+                  servicePort:
+                    format: int32
+                    type: integer
+                  storageClass:
+                    type: string
+                required:
+                - namePrefix
+                - namespace
+                - servicePort
+                type: object
+            required:
+            - bitnami
+            - policy
+            - prometheus
+            - router
+            - scaleBounds
+            - target
             type: object
           status:
             description: status defines the observed state of MongodAutoscaler
@@ -116,6 +203,19 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              currentShardNames:
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              lastDesiredShards:
+                format: int32
+                type: integer
+              lastObservedCPU:
+                type: string
+              lastScaleTime:
+                format: date-time
+                type: string
             type: object
         required:
         - spec
