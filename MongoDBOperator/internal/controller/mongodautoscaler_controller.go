@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"k8s.io/apimachinery/pkg/labels"
@@ -227,13 +228,17 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 					return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 				}
 				// Draining completed; run a dropDB job on the shard's primary to clean up local data before deletion
-				dbName := "ycsb"
-				dropJobName := fmt.Sprintf("dropdb-%s-shard%d", dbName, idx)
+				dropJobName := fmt.Sprintf("dropdb-shard%d", idx)
 				var dropJob batchv1.Job
 				if err := r.Get(ctx, client.ObjectKey{Namespace: mda.Spec.Bitnami.ReleaseNamespace, Name: dropJobName}, &dropJob); err != nil {
-					// Create if not exists
-					if err := r.createDropDBJobBitnami(ctx, mda, idx, dbName); err != nil {
-						log.Error(err, "failed to create dropDB Job (bitnami)", "job", dropJobName)
+					dbList, err := r.listShardDatabases(ctx, mda, idx)
+					if err != nil {
+						log.Error(err, "failed to list databases for shard", "shardIndex", idx)
+						return ctrl.Result{RequeueAfter: time.Minute}, nil
+					}
+
+					if err := r.createDropDBJobBitnami(ctx, mda, idx, dbList); err != nil {
+						log.Error(err, "failed to create dropDB Job for databases", "databases", dbList)
 						return ctrl.Result{RequeueAfter: time.Minute}, nil
 					} else {
 						log.Info("dropDB Job created successfully", "job", dropJobName)
@@ -361,6 +366,60 @@ func (r *MongodAutoscalerReconciler) isBalancerRunning(ctx context.Context, mda 
 		return inBalancerRound, nil
 	}
 	return false, fmt.Errorf("unexpected response format: %v", result)
+}
+
+func (r *MongodAutoscalerReconciler) listShardDatabases(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) ([]string, error) {
+	ns := mda.Spec.Bitnami.ReleaseNamespace
+	full := mda.Spec.Bitnami.ReleaseName
+	host := fmt.Sprintf("%s-shard%d-data-0.%s-headless.%s.svc.cluster.local:%d",
+		full, idx, full, ns, mda.Spec.Target.ServicePort)
+
+	// Determine the Secret name/key for the root password. Default to Bitnami chart's convention
+	secretName := full
+	secretKey := "mongodb-root-password"
+
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: secretName}, &secret); err != nil {
+		return nil, fmt.Errorf("failed to fetch secret %s: %w", secretName, err)
+	}
+
+	passwordBytes, exists := secret.Data[secretKey]
+	if !exists {
+		return nil, fmt.Errorf("key '%s' not found in secret %s", secretKey, secretName)
+	}
+	password := string(passwordBytes)
+
+	uri := fmt.Sprintf("mongodb://root:%s@%s/admin?authSource=admin", password, host)
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+	defer client.Disconnect(ctx)
+
+	adminDB := client.Database("admin")
+	var result bson.M
+	if err := adminDB.RunCommand(ctx, bson.D{{Key: "listDatabases", Value: 1}}).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+
+	databases, ok := result["databases"].(primitive.A)
+	if !ok {
+		return nil, fmt.Errorf("unexpected format for databases: %v", result)
+	}
+
+	var dbList []string
+	for _, db := range databases {
+		if dbMap, ok := db.(primitive.M); ok {
+			if name, ok := dbMap["name"].(string); ok {
+				// Filter out system databases: "admin", "config", "local"
+				if name != "admin" && name != "config" && name != "local" {
+					dbList = append(dbList, name)
+				}
+			}
+		}
+	}
+
+	return dbList, nil
 }
 
 func (r *MongodAutoscalerReconciler) createBitnamiShard(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) error {
@@ -584,7 +643,7 @@ func (r *MongodAutoscalerReconciler) createRemoveShardJobBitnami(ctx context.Con
 	return nil
 }
 
-func (r *MongodAutoscalerReconciler) createDropDBJobBitnami(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int, dbName string) error {
+func (r *MongodAutoscalerReconciler) createDropDBJobBitnami(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int, dbList []string) error {
 	ns := mda.Spec.Bitnami.ReleaseNamespace
 	full := mda.Spec.Bitnami.ReleaseName
 	host := fmt.Sprintf("%s-shard%d-data-0.%s-headless.%s.svc.cluster.local:%d",
@@ -595,7 +654,7 @@ func (r *MongodAutoscalerReconciler) createDropDBJobBitnami(ctx context.Context,
 	secretName := full
 	secretKey := "mongodb-root-password"
 
-	jobName := fmt.Sprintf("dropdb-%s-shard%d", dbName, idx)
+	jobName := fmt.Sprintf("dropdb-shard%d", idx)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
@@ -618,8 +677,9 @@ func (r *MongodAutoscalerReconciler) createDropDBJobBitnami(ctx context.Context,
 							}},
 						}},
 						Args: []string{fmt.Sprintf(
-							"mongosh --host %s -u root -p \"$MONGODB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval 'db.getSiblingDB(\"%s\").dropDatabase();'",
-							host, dbName)},
+							"mongosh --host %s -u root -p \"$MONGODB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval '%s'",
+							host, generateDropDBCommands(dbList)),
+						},
 					}},
 				},
 			},
@@ -651,4 +711,15 @@ func (r *MongodAutoscalerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func ptrI32(v int32) *int32 {
 	return &v
+}
+
+func generateDropDBCommands(dbList []string) string {
+	var sb strings.Builder
+	for i, dbName := range dbList {
+		if i > 0 {
+			sb.WriteString("; ")
+		}
+		sb.WriteString(fmt.Sprintf("db.getSiblingDB(\"%s\").dropDatabase()", dbName))
+	}
+	return sb.String()
 }
