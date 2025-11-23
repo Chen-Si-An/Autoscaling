@@ -54,7 +54,6 @@ type MongodAutoscalerReconciler struct {
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongodautoscalers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongodautoscalers/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -78,8 +77,8 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		mda.Status.ScalingPhase = "Idle"
 	}
 
-	min := int32(mda.Spec.ScaleBounds.MinShards)
-	max := int32(mda.Spec.ScaleBounds.MaxShards)
+	min := mda.Spec.ScaleBounds.MinShards
+	max := mda.Spec.ScaleBounds.MaxShards
 	curr := int32(len(r.currentBitnamiShardNames(ctx, mda)))
 	target := float64(mda.Spec.Policy.CpuTargetPercent)
 	tol := float64(mda.Spec.Policy.TolerancePercent)

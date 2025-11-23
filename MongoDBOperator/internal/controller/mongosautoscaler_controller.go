@@ -18,13 +18,20 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	autoscalerv1alpha1 "github.com/Chen-Si-An/Autoscaling/MongoDBOperator/api/v1alpha1"
+	"github.com/Chen-Si-An/Autoscaling/MongoDBOperator/pkg/promclient"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MongosAutoscalerReconciler reconciles a MongosAutoscaler object
@@ -36,6 +43,7 @@ type MongosAutoscalerReconciler struct {
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongosautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongosautoscalers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongosautoscalers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -47,11 +55,77 @@ type MongosAutoscalerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *MongosAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	msa := &autoscalerv1alpha1.MongosAutoscaler{}
+	if err := r.Get(ctx, req.NamespacedName, msa); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	var deploy appsv1.Deployment
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      msa.Spec.Router.Name,
+		Namespace: msa.Spec.Router.Namespace,
+	}, &deploy); err != nil {
+		log.Error(err, "failed to get mongos deployment")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if deploy.Spec.Replicas == nil {
+		log.Error(nil, "mongos deployment has nil replicas")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	prom, err := promclient.NewPromClient(msa.Spec.Prometheus.URL)
+	if err != nil {
+		log.Error(err, "failed to init Prometheus client")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	avgCPU, err := prom.QueryAvgCPU(ctx, msa.Spec.Router.Namespace, msa.Spec.Router.Name, msa.Spec.Policy.Window)
+	if err != nil {
+		log.Error(err, "prometheus query failed")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	min := msa.Spec.ScaleBounds.MinReplicas
+	max := msa.Spec.ScaleBounds.MaxReplicas
+	curr := *deploy.Spec.Replicas
+	target := float64(msa.Spec.Policy.CpuTargetPercent)
+	tol := float64(msa.Spec.Policy.TolerancePercent)
+	cooldown := time.Duration(msa.Spec.Policy.CooldownSeconds) * time.Second
+
+	if time.Since(msa.Status.LastScaleTime.Time) < cooldown {
+		return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+	}
+
+	desired := curr
+	switch {
+	case avgCPU > target+tol && curr < max:
+		desired = curr + 1
+		log.Info("Scaling up mongos", "from", curr, "to", desired, "cpu", avgCPU)
+	case avgCPU < target-tol && curr > min:
+		desired = curr - 1
+		log.Info("Scaling down mongos", "from", curr, "to", desired, "cpu", avgCPU)
+	default:
+		log.Info("Mongos replicas within target range, no scaling action needed", "currentReplicas", curr, "cpu", avgCPU)
+	}
+
+	if desired != curr {
+		deploy.Spec.Replicas = &desired
+		if err := r.Update(ctx, &deploy); err != nil {
+			log.Error(err, "failed to update mongos deployment replicas")
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+
+		msa.Status.LastScaleTime = metav1.Now()
+		msa.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+		msa.Status.LastDesiredReplicas = desired
+		_ = r.Status().Update(ctx, msa)
+		return ctrl.Result{}, nil
+	}
+
+	return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

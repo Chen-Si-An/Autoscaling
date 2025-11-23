@@ -7,3 +7,19 @@ metadata:
   name: mongosautoscaler-sample
 spec:
   # TODO(user): Add fields here
+  router:
+    name: my-mongodb-sharded-mongos
+    namespace: default
+
+  scaleBounds:
+    minReplicas: 1
+    maxReplicas: 3
+  
+  policy:
+    cpuTargetPercent: 60
+    tolerancePercent: 10
+    window: 5m
+    cooldownSeconds: 300
+
+  prometheus:
+    url: http://prometheus-operated.monitoring.svc.cluster.local:9090

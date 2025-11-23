@@ -34,9 +34,9 @@ type BitnamiHelm struct {
 
 type ShardScaleBounds struct {
 	// +required
-	MinShards int `json:"minShards"`
+	MinShards int32 `json:"minShards"`
 	// +required
-	MaxShards int `json:"maxShards"`
+	MaxShards int32 `json:"maxShards"`
 }
 
 type ShardPolicy struct {
@@ -66,7 +66,7 @@ type MongodAutoscalerSpec struct {
 	// +optional
 	Foo *string `json:"foo,omitempty"`
 	// +required
-	Bitnami *BitnamiHelm `json:"bitnami"`
+	Bitnami BitnamiHelm `json:"bitnami"`
 	// +required
 	ScaleBounds ShardScaleBounds `json:"scaleBounds"`
 	// +required

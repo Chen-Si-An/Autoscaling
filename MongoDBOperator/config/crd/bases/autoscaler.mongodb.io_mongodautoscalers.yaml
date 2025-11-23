@@ -83,8 +83,10 @@ spec:
               scaleBounds:
                 properties:
                   maxShards:
+                    format: int32
                     type: integer
                   minShards:
+                    format: int32
                     type: integer
                 required:
                 - maxShards

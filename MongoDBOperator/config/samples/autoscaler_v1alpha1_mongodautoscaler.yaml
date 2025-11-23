@@ -23,4 +23,4 @@ spec:
     cooldownSeconds: 300
 
   prometheus:
-    url: http://prometheus-operated.monitoring.svc:9090
+    url: http://prometheus-operated.monitoring.svc.cluster.local:9090

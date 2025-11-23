@@ -23,6 +23,31 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type RouterRef struct {
+	// +required
+	Name string `json:"name"`
+	// +required
+	Namespace string `json:"namespace"`
+}
+
+type RouterScaleBounds struct {
+	// +required
+	MinReplicas int32 `json:"minReplicas"`
+	// +required
+	MaxReplicas int32 `json:"maxReplicas"`
+}
+
+type RouterPolicy struct {
+	// +required
+	CpuTargetPercent int `json:"cpuTargetPercent"`
+	// +required
+	TolerancePercent int `json:"tolerancePercent"`
+	// +required
+	Window string `json:"window"`
+	// +required
+	CooldownSeconds int `json:"cooldownSeconds"`
+}
+
 // MongosAutoscalerSpec defines the desired state of MongosAutoscaler
 type MongosAutoscalerSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -33,6 +58,14 @@ type MongosAutoscalerSpec struct {
 	// foo is an example field of MongosAutoscaler. Edit mongosautoscaler_types.go to remove/update
 	// +optional
 	Foo *string `json:"foo,omitempty"`
+	// +required
+	Router RouterRef `json:"router"`
+	// +required
+	ScaleBounds RouterScaleBounds `json:"scaleBounds"`
+	// +required
+	Policy RouterPolicy `json:"policy"`
+	// +required
+	Prometheus Prometheus `json:"prometheus"`
 }
 
 // MongosAutoscalerStatus defines the observed state of MongosAutoscaler.
@@ -56,6 +89,12 @@ type MongosAutoscalerStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// +optional
+	LastScaleTime metav1.Time `json:"lastScaleTime,omitempty"`
+	// +optional
+	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
+	// +optional
+	LastDesiredReplicas int32 `json:"lastDesiredReplicas,omitempty"`
 }
 
 // +kubebuilder:object:root=true

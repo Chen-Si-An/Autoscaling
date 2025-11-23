@@ -43,6 +43,56 @@ spec:
                 description: foo is an example field of MongosAutoscaler. Edit mongosautoscaler_types.go
                   to remove/update
                 type: string
+              policy:
+                properties:
+                  cooldownSeconds:
+                    type: integer
+                  cpuTargetPercent:
+                    type: integer
+                  tolerancePercent:
+                    type: integer
+                  window:
+                    type: string
+                required:
+                - cooldownSeconds
+                - cpuTargetPercent
+                - tolerancePercent
+                - window
+                type: object
+              prometheus:
+                properties:
+                  url:
+                    type: string
+                required:
+                - url
+                type: object
+              router:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              scaleBounds:
+                properties:
+                  maxReplicas:
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    type: integer
+                required:
+                - maxReplicas
+                - minReplicas
+                type: object
+            required:
+            - policy
+            - prometheus
+            - router
+            - scaleBounds
             type: object
           status:
             description: status defines the observed state of MongosAutoscaler
@@ -116,6 +166,14 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastDesiredReplicas:
+                format: int32
+                type: integer
+              lastObservedCPU:
+                type: string
+              lastScaleTime:
+                format: date-time
+                type: string
             type: object
         required:
         - spec
