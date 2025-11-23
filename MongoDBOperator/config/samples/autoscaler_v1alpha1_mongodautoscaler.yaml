@@ -9,14 +9,8 @@ spec:
   # TODO(user): Add fields here
   bitnami:
     releaseName: my-mongodb-sharded
-    releaseNamespace: default
-    controllerManaged: true
-
-  target:
     namespace: default
-    namePrefix: shard
     servicePort: 27017
-    storageClass: standard
 
   scaleBounds:
     minShards: 1
@@ -30,20 +24,3 @@ spec:
 
   prometheus:
     url: http://prometheus-operated.monitoring.svc:9090
-
-  router:
-    secretRef:
-      name: mongos-admin-uri
-      namespace: default
-
----
-# Secret providing the mongos admin URI (referenced by spec.router.secretRef)
-# Replace <password> before applying.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mongos-admin-uri
-  namespace: default
-type: Opaque
-stringData:
-  uri: "mongodb://root:mongodb123@my-mongodb-sharded.default.svc.cluster.local:27017/admin?authSource=admin"

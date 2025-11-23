@@ -41,15 +41,17 @@ spec:
             properties:
               bitnami:
                 properties:
-                  controllerManaged:
-                    type: boolean
+                  namespace:
+                    type: string
                   releaseName:
                     type: string
-                  releaseNamespace:
-                    type: string
+                  servicePort:
+                    format: int32
+                    type: integer
                 required:
+                - namespace
                 - releaseName
-                - releaseNamespace
+                - servicePort
                 type: object
               foo:
                 description: foo is an example field of MongodAutoscaler. Edit mongodautoscaler_types.go
@@ -78,25 +80,6 @@ spec:
                 required:
                 - url
                 type: object
-              router:
-                properties:
-                  secretRef:
-                    description: SecretRef points to a Secret containing a key "uri"
-                      with a MongoDB connection string that has admin privileges
-                    properties:
-                      name:
-                        description: name is unique within a namespace to reference
-                          a secret resource.
-                        type: string
-                      namespace:
-                        description: namespace defines the space within which the
-                          secret name must be unique.
-                        type: string
-                    type: object
-                    x-kubernetes-map-type: atomic
-                required:
-                - secretRef
-                type: object
               scaleBounds:
                 properties:
                   maxShards:
@@ -107,29 +90,11 @@ spec:
                 - maxShards
                 - minShards
                 type: object
-              target:
-                properties:
-                  namePrefix:
-                    type: string
-                  namespace:
-                    type: string
-                  servicePort:
-                    format: int32
-                    type: integer
-                  storageClass:
-                    type: string
-                required:
-                - namePrefix
-                - namespace
-                - servicePort
-                type: object
             required:
             - bitnami
             - policy
             - prometheus
-            - router
             - scaleBounds
-            - target
             type: object
           status:
             description: status defines the observed state of MongodAutoscaler
@@ -216,6 +181,11 @@ spec:
               lastScaleTime:
                 format: date-time
                 type: string
+              scalingPhase:
+                type: string
+              targetShardIndex:
+                format: int32
+                type: integer
             type: object
         required:
         - spec

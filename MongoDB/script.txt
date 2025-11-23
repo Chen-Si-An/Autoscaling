@@ -50,6 +50,7 @@ db.adminCommand({ movePrimary: "ycsb", to: "my-mongodb-sharded-shard-0" })
 db.adminCommand({ removeShard: "my-mongodb-sharded-shard-1" })
 db.adminCommand({ listShards: 1 })
 db.getSiblingDB("ycsb").dropDatabase()
+db.adminCommand({ balancerStatus: 1 })
 
 kubectl run ycsb-test --image=maven:3.8-openjdk-11 --rm -it --restart=Never -- bash
 kubectl run ycsb-test-1 --rm -it --restart=Never --image=maven:3.8-openjdk-11 --overrides='{"apiVersion": "v1", "spec": {"nodeSelector": {"kubernetes.io/hostname": "i-0f2b3dba87cbc381b"}}}'  -- bash
