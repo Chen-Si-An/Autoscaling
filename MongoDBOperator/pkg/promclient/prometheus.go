@@ -3,6 +3,7 @@ package promclient
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -22,15 +23,39 @@ func NewPromClient(url string) (*PromClient, error) {
 	return &PromClient{v1api: v1.NewAPI(client)}, nil
 }
 
-func (p *PromClient) QueryAvgCPU(ctx context.Context, namespace, name, window string) (float64, error) {
+func (p *PromClient) QueryAvgCPU(ctx context.Context, namespace string, podRegex string, window string) (float64, error) {
 	query := fmt.Sprintf(`
       100 *
       avg(
-        sum by(pod) (rate(container_cpu_usage_seconds_total{namespace="%s",pod=~"%s-.*",container!="POD",container!=""}[%s]))
+        sum by(pod) (rate(container_cpu_usage_seconds_total{namespace="%s",pod=~"%s",container!="POD",container!=""}[%s]))
         /
-        sum by(pod) (kube_pod_container_resource_requests{namespace="%s",pod=~"%s-.*",resource="cpu"})
+        sum by(pod) (kube_pod_container_resource_requests{namespace="%s",pod=~"%s",resource="cpu"})
       )`,
-		namespace, name, window, namespace, name)
+		namespace, podRegex, window, namespace, podRegex)
+
+	result, _, err := p.v1api.Query(ctx, query, time.Now())
+	if err != nil {
+		return 0, fmt.Errorf("prometheus query error: %w; query=%s", err, query)
+	}
+
+	vector, ok := result.(model.Vector)
+	if !ok || vector.Len() == 0 {
+		return 0, fmt.Errorf("no data returned for query: %s", query)
+	}
+
+	return float64(vector[0].Value), nil
+}
+
+func (p *PromClient) QueryAvgIOWait(ctx context.Context, endpoints []string, window string) (float64, error) {
+	nodeRegex := strings.Join(endpoints, "|")
+	query := fmt.Sprintf(`
+	  100 * 
+	  avg (
+	  sum by (instance) (rate(node_cpu_seconds_total{mode="iowait",instance=~"%s"}[%s]))
+	  /
+	  sum by (instance) (rate(node_cpu_seconds_total{instance=~"%s"}[%s]))
+	)`,
+		nodeRegex, window, nodeRegex, window)
 
 	result, _, err := p.v1api.Query(ctx, query, time.Now())
 	if err != nil {
@@ -41,5 +66,6 @@ func (p *PromClient) QueryAvgCPU(ctx context.Context, namespace, name, window st
 	if !ok || len(vector) == 0 {
 		return 0, fmt.Errorf("no data returned for query: %s", query)
 	}
+
 	return float64(vector[0].Value), nil
 }

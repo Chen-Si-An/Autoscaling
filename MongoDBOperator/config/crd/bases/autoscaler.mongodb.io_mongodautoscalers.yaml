@@ -53,34 +53,52 @@ spec:
                 - releaseName
                 - servicePort
                 type: object
-              foo:
-                description: foo is an example field of MongodAutoscaler. Edit mongodautoscaler_types.go
-                  to remove/update
-                type: string
               policy:
                 properties:
                   cooldownSeconds:
                     type: integer
                   cpuTargetPercent:
                     type: integer
-                  tolerancePercent:
+                  cpuTolerancePercent:
+                    type: integer
+                  iowaitTargetPercent:
+                    type: integer
+                  iowaitTolerancePercent:
                     type: integer
                   window:
                     type: string
                 required:
                 - cooldownSeconds
                 - cpuTargetPercent
-                - tolerancePercent
+                - cpuTolerancePercent
+                - iowaitTargetPercent
+                - iowaitTolerancePercent
                 - window
                 type: object
               prometheus:
                 properties:
+                  nodeExporterPort:
+                    format: int32
+                    type: integer
                   url:
                     type: string
                 required:
+                - nodeExporterPort
                 - url
                 type: object
-              scaleBounds:
+              replicaScaleBounds:
+                properties:
+                  maxReplicas:
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    type: integer
+                required:
+                - maxReplicas
+                - minReplicas
+                type: object
+              shardScaleBounds:
                 properties:
                   maxShards:
                     format: int32
@@ -96,7 +114,7 @@ spec:
             - bitnami
             - policy
             - prometheus
-            - scaleBounds
+            - replicaScaleBounds
             type: object
           status:
             description: status defines the observed state of MongodAutoscaler
@@ -170,11 +188,9 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              currentShardNames:
-                items:
-                  type: string
-                type: array
-                x-kubernetes-list-type: set
+              lastDesiredReplicas:
+                format: int32
+                type: integer
               lastDesiredShards:
                 format: int32
                 type: integer
@@ -185,6 +201,9 @@ spec:
                 type: string
               scalingPhase:
                 type: string
+              targetReplicaCount:
+                format: int32
+                type: integer
               targetShardIndex:
                 format: int32
                 type: integer

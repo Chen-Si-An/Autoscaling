@@ -48,6 +48,13 @@ type RouterPolicy struct {
 	CooldownSeconds int `json:"cooldownSeconds"`
 }
 
+type Prometheus struct {
+	// +required
+	URL string `json:"url"`
+	// +required
+	NodeExporterPort int32 `json:"nodeExporterPort"`
+}
+
 // MongosAutoscalerSpec defines the desired state of MongosAutoscaler
 type MongosAutoscalerSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster

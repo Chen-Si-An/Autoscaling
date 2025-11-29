@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,8 +52,9 @@ type MongodAutoscalerReconciler struct {
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongodautoscalers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=autoscaler.mongodb.io,resources=mongodautoscalers/finalizers,verbs=update
-// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="", resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -78,16 +78,15 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		mda.Status.ScalingPhase = "Idle"
 	}
 
-	min := mda.Spec.ScaleBounds.MinShards
-	max := mda.Spec.ScaleBounds.MaxShards
-	curr := int32(len(r.currentBitnamiShardNames(ctx, mda)))
-	target := float64(mda.Spec.Policy.CpuTargetPercent)
-	tol := float64(mda.Spec.Policy.TolerancePercent)
 	cooldown := time.Duration(mda.Spec.Policy.CooldownSeconds) * time.Second
-
 	if time.Since(mda.Status.LastScaleTime.Time) < cooldown {
 		return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 	}
+
+	cpuTarget := float64(mda.Spec.Policy.CpuTargetPercent)
+	cpuTol := float64(mda.Spec.Policy.CpuTolerancePercent)
+	iowaitTarget := float64(mda.Spec.Policy.IOWaitTargetPercent)
+	iowaitTol := float64(mda.Spec.Policy.IOWaitTolerancePercent)
 
 	if mda.Status.ScalingPhase == "Idle" {
 		balancerRunning, err := r.isBalancerRunning(ctx, mda)
@@ -106,35 +105,100 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
 
-		queryPrefix := fmt.Sprintf("%s-shard[0-9]+-data", mda.Spec.Bitnami.ReleaseName)
-		queryNS := mda.Spec.Bitnami.Namespace
-		avgCPU, err := prom.QueryAvgCPU(ctx, queryNS, queryPrefix, mda.Spec.Policy.Window)
+		podRegex := fmt.Sprintf("%s-shard[0-9]+-data.*", mda.Spec.Bitnami.ReleaseName)
+		avgCPU, err := prom.QueryAvgCPU(ctx, mda.Spec.Bitnami.Namespace, podRegex, mda.Spec.Policy.Window)
 		if err != nil {
 			log.Error(err, "prometheus query failed")
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
 
+		ips, err := r.getDatanodeNodeIPs(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to get datanode node IPs")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		endpoints := make([]string, 0, len(ips))
+		for _, ip := range ips {
+			endpoint := fmt.Sprintf("%s:%d", ip, mda.Spec.Prometheus.NodeExporterPort)
+			endpoints = append(endpoints, endpoint)
+		}
+
+		avgIOWait, err := prom.QueryAvgIOWait(ctx, endpoints, mda.Spec.Policy.Window)
+		if err != nil {
+			log.Error(err, "prometheus query failed")
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+
+		var minShards, maxShards, minReplicas, maxReplicas int32
+		if mda.Spec.ShardScaleBounds != nil {
+			minShards = mda.Spec.ShardScaleBounds.MinShards
+			maxShards = mda.Spec.ShardScaleBounds.MaxShards
+		}
+		if mda.Spec.ReplicaScaleBounds != nil {
+			minReplicas = mda.Spec.ReplicaScaleBounds.MinReplicas
+			maxReplicas = mda.Spec.ReplicaScaleBounds.MaxReplicas
+		}
+		curShards, err := r.currentShardCount(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to get current shard count")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		curReplicas, err := r.currentReplicaCount(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to get current replica count")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
 		switch {
-		case avgCPU > target+tol && curr < max:
-			mda.Status.ScalingPhase = "ScalingUpCreatingShard"
-			mda.Status.TargetShardIdx = curr
-			mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
-			mda.Status.LastDesiredShards = curr + 1
-			mda.Status.CurrentShardNames = r.currentBitnamiShardNames(ctx, mda)
-			log.Info("Scaling UP shards", "cpu", avgCPU, "old", curr, "new", curr+1)
-			_ = r.Status().Update(ctx, mda)
-			return ctrl.Result{}, nil
-		case avgCPU < target-tol && curr > min:
-			mda.Status.ScalingPhase = "ScalingDownRemovingShard"
-			mda.Status.TargetShardIdx = curr - 1
-			mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
-			mda.Status.LastDesiredShards = curr - 1
-			mda.Status.CurrentShardNames = r.currentBitnamiShardNames(ctx, mda)
-			log.Info("Scaling DOWN shards", "cpu", avgCPU, "old", curr, "new", curr-1)
-			_ = r.Status().Update(ctx, mda)
-			return ctrl.Result{}, nil
+		case avgCPU > cpuTarget+cpuTol || avgIOWait > iowaitTarget+iowaitTol:
+			if mda.Spec.ShardScaleBounds != nil && curShards < maxShards {
+				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastDesiredShards = curShards + 1
+				mda.Status.LastDesiredReplicas = curReplicas
+				mda.Status.ScalingPhase = "ScalingUpCreatingShard"
+				mda.Status.TargetShardIdx = curShards
+				log.Info("Scaling UP shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards+1)
+				_ = r.Status().Update(ctx, mda)
+				return ctrl.Result{}, nil
+			} else if mda.Spec.ReplicaScaleBounds != nil && curReplicas < maxReplicas {
+				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastDesiredShards = curShards
+				mda.Status.LastDesiredReplicas = curReplicas + 1
+				mda.Status.ScalingPhase = "ScalingUpCreatingReplica"
+				mda.Status.TargetReplicaCount = curReplicas + 1
+				log.Info("Scaling UP replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
+				_ = r.Status().Update(ctx, mda)
+				return ctrl.Result{}, nil
+			} else {
+				log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+			}
+		case avgCPU < cpuTarget-cpuTol && avgIOWait < iowaitTarget-iowaitTol:
+			if mda.Spec.ShardScaleBounds != nil && curReplicas > minReplicas {
+				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastDesiredShards = curShards
+				mda.Status.LastDesiredReplicas = curReplicas - 1
+				mda.Status.ScalingPhase = "ScalingDownRemovingReplica"
+				mda.Status.TargetReplicaCount = curReplicas - 1
+				log.Info("Scaling DOWN replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
+				_ = r.Status().Update(ctx, mda)
+				return ctrl.Result{}, nil
+			} else if mda.Spec.ReplicaScaleBounds != nil && curShards > minShards {
+				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastDesiredShards = curShards - 1
+				mda.Status.LastDesiredReplicas = curReplicas
+				mda.Status.ScalingPhase = "ScalingDownRemovingShard"
+				mda.Status.TargetShardIdx = curShards - 1
+				log.Info("Scaling DOWN shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards-1)
+				_ = r.Status().Update(ctx, mda)
+				return ctrl.Result{}, nil
+			} else {
+				log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+			}
 		default:
-			log.Info("No shard scaling action", "cpu", avgCPU, "shards", curr)
+			log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
 			return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 		}
 	}
@@ -149,9 +213,11 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			mda.Status.ScalingPhase = "ScalingUpAddingShard"
 		}
 	case "ScalingUpAddingShard":
+		release := mda.Spec.Bitnami.ReleaseName
 		shardIdx := int(mda.Status.TargetShardIdx)
+		replSet := bitnamiReplicaSetName(release, shardIdx)
 
-		expectedSTS := fmt.Sprintf("%s-shard%d-data", mda.Spec.Bitnami.ReleaseName, shardIdx)
+		expectedSTS := fmt.Sprintf("%s-shard%d-data", release, shardIdx)
 		var shardSTS appsv1.StatefulSet
 		if err := r.Get(ctx, client.ObjectKey{Namespace: mda.Spec.Bitnami.Namespace, Name: expectedSTS}, &shardSTS); err != nil {
 			log.Info("Waiting for shard StatefulSet before addShard", "statefulset", expectedSTS)
@@ -163,8 +229,7 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
-		replSet := r.bitnamiReplicaSetName(mda.Spec.Bitnami.ReleaseName, shardIdx)
-		if err := r.createAddBitnamiShardJob(ctx, mda, replSet, shardIdx); err != nil {
+		if err := r.createAddBitnamiShardJob(ctx, mda, shardIdx); err != nil {
 			log.Error(err, "failed to create addShard Job (bitnami)")
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
@@ -202,17 +267,17 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
-		log.Info("Resharding completed; scaling-up process finished")
+		log.Info("Resharding completed; shard scaling-up process finished")
 		mda.Status.ScalingPhase = "Idle"
 		mda.Status.TargetShardIdx = -1
 		mda.Status.LastScaleTime = metav1.Now()
-		mda.Status.CurrentShardNames = r.currentBitnamiShardNames(ctx, mda)
 	case "ScalingDownRemovingShard":
 		shardIdx := int(mda.Status.TargetShardIdx)
-		replSet := r.bitnamiReplicaSetName(mda.Spec.Bitnami.ReleaseName, shardIdx)
+		release := mda.Spec.Bitnami.ReleaseName
+		replSet := bitnamiReplicaSetName(release, shardIdx)
 
 		// Ensure the Job exists (idempotent)
-		if err := r.createRemoveBitnamiShardJob(ctx, mda, replSet); err != nil {
+		if err := r.createRemoveBitnamiShardJob(ctx, mda, shardIdx); err != nil {
 			log.Error(err, "failed to create removeShard Job (bitnami)")
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
@@ -290,11 +355,156 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
 
-		log.Info("Scale-down process finished")
+		log.Info("Shard scaling-down process finished")
 		mda.Status.ScalingPhase = "Idle"
 		mda.Status.TargetShardIdx = -1
 		mda.Status.LastScaleTime = metav1.Now()
-		mda.Status.CurrentShardNames = r.currentBitnamiShardNames(ctx, mda)
+	case "ScalingUpCreatingReplica":
+		replicas := mda.Status.TargetReplicaCount
+		if err := r.patchBitnamiReplica(ctx, mda, replicas); err != nil {
+			log.Error(err, "failed to create bitnami replica")
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		} else {
+			mda.Status.ScalingPhase = "ScalingUpAddingReplica"
+		}
+	case "ScalingUpAddingReplica":
+		replicas := mda.Status.TargetReplicaCount
+		action := "add"
+
+		stsList, err := r.currentBitnamiShards(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to get current shards")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		// Ensure all shard replicas are ready
+		for _, sts := range stsList.Items {
+			if sts.Status.ReadyReplicas < *sts.Spec.Replicas {
+				log.Info("Waiting for shard StatefulSet to have all replicas ready", "statefulset", sts.Name)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
+
+		// Check if mongos can connect to primarys of all shards
+		for _, sts := range stsList.Items {
+			if err := r.checkShardConnectivity(ctx, mda, sts); err != nil {
+				log.Error(err, "mongos cannot connect to shard primary", "statefulset", sts.Name)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
+
+		for _, sts := range stsList.Items {
+			if err := r.createReplicaMembershipJob(ctx, mda, sts, replicas-1, action); err != nil {
+				log.Error(err, "failed to create membership Job (bitnami)", "statefulset", sts.Name)
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+		}
+
+		var memJobs batchv1.JobList
+		for _, sts := range stsList.Items {
+			memJobName := fmt.Sprintf("%s-membership-%s-%d", action, sts.Name, replicas-1)
+			var memJob batchv1.Job
+			if err := r.Get(ctx, client.ObjectKey{Namespace: mda.Spec.Bitnami.Namespace, Name: memJobName}, &memJob); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			if memJob.Status.Failed > 0 {
+				log.Error(fmt.Errorf("membership Job failed"), "membership Job encountered failures", "statefulset", sts.Name, "replicaIndex", replicas-1, "job", memJobName)
+				foreground := metav1.DeletePropagationForeground
+				_ = r.Delete(ctx, &memJob, &client.DeleteOptions{
+					PropagationPolicy: &foreground,
+				})
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+
+			if memJob.Status.Succeeded < 1 {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			memJobs.Items = append(memJobs.Items, memJob)
+		}
+
+		log.Info("membership Jobs completed successfully", "replicaIndex", replicas-1)
+		for _, memJob := range memJobs.Items {
+			foreground := metav1.DeletePropagationForeground
+			_ = r.Delete(ctx, &memJob, &client.DeleteOptions{
+				PropagationPolicy: &foreground,
+			})
+		}
+
+		log.Info("Replica scaling-up process finished")
+		mda.Status.ScalingPhase = "Idle"
+		mda.Status.TargetReplicaCount = -1
+		mda.Status.LastScaleTime = metav1.Now()
+	case "ScalingDownRemovingReplica":
+		replicas := mda.Status.TargetReplicaCount
+		action := "remove"
+
+		// Check if mongos can connect to primarys of all shards
+		stsList, err := r.currentBitnamiShards(ctx, mda)
+		if err != nil {
+			log.Error(err, "failed to get current shards")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		for _, sts := range stsList.Items {
+			if err := r.checkShardConnectivity(ctx, mda, sts); err != nil {
+				log.Error(err, "mongos cannot connect to shard primary", "statefulset", sts.Name)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
+
+		for _, sts := range stsList.Items {
+			if err := r.createReplicaMembershipJob(ctx, mda, sts, replicas, action); err != nil {
+				log.Error(err, "failed to create membership Job (bitnami)", "statefulset", sts.Name)
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+		}
+
+		var memJobs batchv1.JobList
+		for _, sts := range stsList.Items {
+			memJobName := fmt.Sprintf("%s-membership-%s-%d", action, sts.Name, replicas)
+			var memJob batchv1.Job
+			if err := r.Get(ctx, client.ObjectKey{Namespace: mda.Spec.Bitnami.Namespace, Name: memJobName}, &memJob); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			if memJob.Status.Failed > 0 {
+				log.Error(fmt.Errorf("membership Job failed"), "membership Job encountered failures", "statefulset", sts.Name, "replicaIndex", replicas, "job", memJobName)
+				foreground := metav1.DeletePropagationForeground
+				_ = r.Delete(ctx, &memJob, &client.DeleteOptions{
+					PropagationPolicy: &foreground,
+				})
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+
+			if memJob.Status.Succeeded < 1 {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			memJobs.Items = append(memJobs.Items, memJob)
+		}
+
+		log.Info("membership Jobs completed successfully", "replicaIndex", replicas)
+		for _, memJob := range memJobs.Items {
+			foreground := metav1.DeletePropagationForeground
+			_ = r.Delete(ctx, &memJob, &client.DeleteOptions{
+				PropagationPolicy: &foreground,
+			})
+		}
+
+		mda.Status.ScalingPhase = "ScalingDownDeletingReplica"
+	case "ScalingDownDeletingReplica":
+		replicas := mda.Status.TargetReplicaCount
+		if err := r.patchBitnamiReplica(ctx, mda, replicas); err != nil {
+			log.Error(err, "failed to delete bitnami replica")
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		} else {
+			log.Info("Replica scaling-down process finished")
+			mda.Status.ScalingPhase = "Idle"
+			mda.Status.TargetReplicaCount = -1
+			mda.Status.LastScaleTime = metav1.Now()
+		}
 	default:
 		log.Info("Unknown scaling phase; resetting to Idle", "scalingPhase", mda.Status.ScalingPhase)
 		mda.Status.ScalingPhase = "Idle"
@@ -303,26 +513,72 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{}, nil
 }
 
-func (r *MongodAutoscalerReconciler) bitnamiReplicaSetName(release string, idx int) string {
-	return fmt.Sprintf("%s-shard-%d", release, idx)
-}
+func (r *MongodAutoscalerReconciler) getDatanodeNodeIPs(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) ([]string, error) {
+	ns := mda.Spec.Bitnami.Namespace
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, client.InNamespace(ns), client.MatchingLabels{
+		"app.kubernetes.io/component": "shardsvr",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to list datanode pods: %w", err)
+	}
 
-func (r *MongodAutoscalerReconciler) currentBitnamiShardNames(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) []string {
-	var stsList appsv1.StatefulSetList
-	_ = r.List(ctx, &stsList, &client.ListOptions{Namespace: mda.Spec.Bitnami.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{
-		"app.kubernetes.io/name":     "mongodb-sharded",
-		"app.kubernetes.io/instance": mda.Spec.Bitnami.ReleaseName,
-	})})
-	release := mda.Spec.Bitnami.ReleaseName
-	prefixName := fmt.Sprintf("%s-shard", release)
-	names := make([]string, 0, len(stsList.Items))
-	for _, s := range stsList.Items {
-		if strings.HasPrefix(s.Name, prefixName) && strings.Contains(s.Name, "-data") {
-			names = append(names, s.Name)
+	ipSet := map[string]struct{}{}
+	for _, pod := range podList.Items {
+		if pod.Status.HostIP != "" {
+			ipSet[pod.Status.HostIP] = struct{}{}
 		}
 	}
-	sort.Strings(names)
-	return names
+
+	ips := []string{}
+	for ip := range ipSet {
+		ips = append(ips, ip)
+	}
+	return ips, nil
+}
+
+func (r *MongodAutoscalerReconciler) currentBitnamiShards(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) (appsv1.StatefulSetList, error) {
+	var stsWholeList appsv1.StatefulSetList
+	if err := r.List(ctx, &stsWholeList, &client.ListOptions{Namespace: mda.Spec.Bitnami.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{
+		"app.kubernetes.io/name":     "mongodb-sharded",
+		"app.kubernetes.io/instance": mda.Spec.Bitnami.ReleaseName,
+	})}); err != nil {
+		return appsv1.StatefulSetList{}, fmt.Errorf("failed to StatefulSet list: %w", err)
+	}
+
+	var stsList appsv1.StatefulSetList
+	prefix := fmt.Sprintf("%s-shard", mda.Spec.Bitnami.ReleaseName)
+	for _, sts := range stsWholeList.Items {
+		if strings.HasPrefix(sts.Name, prefix) && strings.Contains(sts.Name, "-data") {
+			stsList.Items = append(stsList.Items, sts)
+		}
+	}
+	return stsList, nil
+}
+
+func (r *MongodAutoscalerReconciler) currentShardCount(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) (int32, error) {
+	stsList, err := r.currentBitnamiShards(ctx, mda)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current shards: %w", err)
+	}
+	return int32(len(stsList.Items)), nil
+}
+
+func (r *MongodAutoscalerReconciler) currentReplicaCount(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) (int32, error) {
+	stsList, err := r.currentBitnamiShards(ctx, mda)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current shards: %w", err)
+	}
+
+	count := int32(0)
+	for _, sts := range stsList.Items {
+		if count == 0 {
+			count = *sts.Spec.Replicas
+		} else if count != *sts.Spec.Replicas {
+			return 0, fmt.Errorf("inconsistent replica counts across shards")
+		}
+	}
+
+	return count, nil
 }
 
 func (r *MongodAutoscalerReconciler) isBalancerRunning(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler) (bool, error) {
@@ -362,6 +618,39 @@ func (r *MongodAutoscalerReconciler) isBalancerRunning(ctx context.Context, mda 
 		return inBalancerRound, nil
 	}
 	return false, fmt.Errorf("unexpected response format: %v", result)
+}
+
+func (r *MongodAutoscalerReconciler) checkShardConnectivity(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, sts appsv1.StatefulSet) error {
+	ns := mda.Spec.Bitnami.Namespace
+	release := mda.Spec.Bitnami.ReleaseName
+	secretName := release
+	secretKey := "mongodb-root-password"
+	port := mda.Spec.Bitnami.ServicePort
+	host := fmt.Sprintf("%s-0.%s-headless.%s.svc.cluster.local:%d", sts.Name, release, ns, port)
+
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: ns, Name: secretName}, &secret); err != nil {
+		return fmt.Errorf("failed to fetch secret %s: %w", secretName, err)
+	}
+
+	passwordBytes, exists := secret.Data[secretKey]
+	if !exists {
+		return fmt.Errorf("key '%s' not found in secret %s", secretKey, secretName)
+	}
+	password := string(passwordBytes)
+
+	uri := fmt.Sprintf("mongodb://root:%s@%s/admin?authSource=admin", password, host)
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+	defer client.Disconnect(ctx)
+
+	if err := client.Ping(ctx, nil); err != nil {
+		return fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	return nil
 }
 
 func (r *MongodAutoscalerReconciler) listShardDatabases(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) ([]string, error) {
@@ -483,12 +772,21 @@ func (r *MongodAutoscalerReconciler) createBitnamiShard(ctx context.Context, mda
 	return nil
 }
 
-func (r *MongodAutoscalerReconciler) createAddBitnamiShardJob(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, replSet string, shardIdx int) error {
+func (r *MongodAutoscalerReconciler) deleteBitnamiShard(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) error {
+	ns := mda.Spec.Bitnami.Namespace
+	release := mda.Spec.Bitnami.ReleaseName
+	stsName := fmt.Sprintf("%s-shard%d-data", release, idx)
+	_ = r.Delete(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: stsName, Namespace: ns}})
+	return nil
+}
+
+func (r *MongodAutoscalerReconciler) createAddBitnamiShardJob(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, shardIdx int) error {
 	ns := mda.Spec.Bitnami.Namespace
 	release := mda.Spec.Bitnami.ReleaseName
 	secretName := release
 	secretKey := "mongodb-root-password"
 	host := release
+	replSet := bitnamiReplicaSetName(release, shardIdx)
 	shardHost := fmt.Sprintf("%s-shard%d-data-0.%s-headless.%s.svc.cluster.local:%d",
 		release, shardIdx, release, ns, mda.Spec.Bitnami.ServicePort)
 
@@ -527,12 +825,13 @@ func (r *MongodAutoscalerReconciler) createAddBitnamiShardJob(ctx context.Contex
 	return nil
 }
 
-func (r *MongodAutoscalerReconciler) createRemoveBitnamiShardJob(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, replSet string) error {
+func (r *MongodAutoscalerReconciler) createRemoveBitnamiShardJob(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, shardIdx int) error {
 	ns := mda.Spec.Bitnami.Namespace
 	release := mda.Spec.Bitnami.ReleaseName
 	secretName := release
 	secretKey := "mongodb-root-password"
 	host := release
+	replSet := bitnamiReplicaSetName(release, shardIdx)
 	// Build a mongosh script that loops calling removeShard until it reports state "completed" (drain finished),
 	// or the shard is already gone (ShardNotFound), with a safe timeout.
 	js := fmt.Sprintf(`
@@ -632,11 +931,67 @@ func (r *MongodAutoscalerReconciler) createDropDBJob(ctx context.Context, mda *a
 	return nil
 }
 
-func (r *MongodAutoscalerReconciler) deleteBitnamiShard(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, idx int) error {
+func (r *MongodAutoscalerReconciler) patchBitnamiReplica(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, replicaCount int32) error {
+	stsList, err := r.currentBitnamiShards(ctx, mda)
+	if err != nil {
+		return fmt.Errorf("failed to get current shards: %w", err)
+	}
+
+	for _, sts := range stsList.Items {
+		// Patch the StatefulSet to update the replica count
+		patch := client.MergeFrom(sts.DeepCopy())
+		sts.Spec.Replicas = &replicaCount
+		if err := r.Patch(ctx, &sts, patch); err != nil {
+			return fmt.Errorf("failed to patch StatefulSet %s: %w", sts.Name, err)
+		}
+	}
+
+	log.FromContext(ctx).Info("Patched Bitnami shard StatefulSets", "newReplicaCount", replicaCount)
+
+	return nil
+}
+
+func (r *MongodAutoscalerReconciler) createReplicaMembershipJob(ctx context.Context, mda *autoscalerv1alpha1.MongodAutoscaler, sts appsv1.StatefulSet, replIdx int32, action string) error {
 	ns := mda.Spec.Bitnami.Namespace
 	release := mda.Spec.Bitnami.ReleaseName
-	stsName := fmt.Sprintf("%s-shard%d-data", release, idx)
-	_ = r.Delete(ctx, &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: stsName, Namespace: ns}})
+	port := mda.Spec.Bitnami.ServicePort
+	secretName := release
+	secretKey := "mongodb-root-password"
+	primary := fmt.Sprintf("%s-0.%s-headless.%s.svc.cluster.local:%d", sts.Name, release, ns, port)
+	host := fmt.Sprintf("%s-%d.%s-headless.%s.svc.cluster.local:%d", sts.Name, replIdx, release, ns, port)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-membership-%s-%d", action, sts.Name, replIdx),
+			Namespace: ns,
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit: ptrI32(0),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					Containers: []corev1.Container{{
+						Name:    fmt.Sprintf("%s-membership", action),
+						Image:   "mongo:6.0",
+						Command: []string{"/bin/sh", "-c"},
+						Env: []corev1.EnvVar{{
+							Name: "MONGODB_ROOT_PASSWORD",
+							ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+								Key:                  secretKey,
+							}},
+						}},
+						Args: []string{fmt.Sprintf("mongosh --host %s -u root -p \"$MONGODB_ROOT_PASSWORD\" --authenticationDatabase admin --quiet --eval 'rs.%s(\"%s\")'",
+							primary, action, host),
+						},
+					}},
+				},
+			},
+		},
+	}
+	if err := r.Create(ctx, job); client.IgnoreAlreadyExists(err) != nil {
+		return err
+	}
 	return nil
 }
 
@@ -676,6 +1031,10 @@ func (r *MongodAutoscalerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func ptrI32(v int32) *int32 {
 	return &v
+}
+
+func bitnamiReplicaSetName(release string, idx int) string {
+	return fmt.Sprintf("%s-shard-%d", release, idx)
 }
 
 func generateDropDBCommands(dbList []string) string {

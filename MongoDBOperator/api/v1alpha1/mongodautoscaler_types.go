@@ -39,20 +39,26 @@ type ShardScaleBounds struct {
 	MaxShards int32 `json:"maxShards"`
 }
 
-type ShardPolicy struct {
+type ReplicaScaleBounds struct {
+	// +required
+	MinReplicas int32 `json:"minReplicas"`
+	// +required
+	MaxReplicas int32 `json:"maxReplicas"`
+}
+
+type DataNodePolicy struct {
 	// +required
 	CpuTargetPercent int `json:"cpuTargetPercent"`
 	// +required
-	TolerancePercent int `json:"tolerancePercent"`
+	CpuTolerancePercent int `json:"cpuTolerancePercent"`
+	// +required
+	IOWaitTargetPercent int `json:"iowaitTargetPercent"`
+	// +required
+	IOWaitTolerancePercent int `json:"iowaitTolerancePercent"`
 	// +required
 	Window string `json:"window"`
 	// +required
 	CooldownSeconds int `json:"cooldownSeconds"`
-}
-
-type Prometheus struct {
-	// +required
-	URL string `json:"url"`
 }
 
 // MongodAutoscalerSpec defines the desired state of MongodAutoscaler
@@ -62,15 +68,14 @@ type MongodAutoscalerSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of MongodAutoscaler. Edit mongodautoscaler_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
 	// +required
 	Bitnami BitnamiHelm `json:"bitnami"`
+	// +optional
+	ShardScaleBounds *ShardScaleBounds `json:"shardScaleBounds"`
 	// +required
-	ScaleBounds ShardScaleBounds `json:"scaleBounds"`
+	ReplicaScaleBounds *ReplicaScaleBounds `json:"replicaScaleBounds"`
 	// +required
-	Policy ShardPolicy `json:"policy"`
+	Policy DataNodePolicy `json:"policy"`
 	// +required
 	Prometheus Prometheus `json:"prometheus"`
 }
@@ -97,18 +102,19 @@ type MongodAutoscalerStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// +optional
+	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
+	// +optional
+	LastDesiredShards int32 `json:"lastDesiredShards,omitempty"`
+	// +optional
+	LastDesiredReplicas int32 `json:"lastDesiredReplicas,omitempty"`
+	// +optional
 	ScalingPhase string `json:"scalingPhase,omitempty"`
+	// +optional
+	TargetReplicaCount int32 `json:"targetReplicaCount,omitempty"`
 	// +optional
 	TargetShardIdx int32 `json:"targetShardIndex,omitempty"`
 	// +optional
 	LastScaleTime metav1.Time `json:"lastScaleTime,omitempty"`
-	// +optional
-	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
-	// +optional
-	LastDesiredShards int32 `json:"lastDesiredShards,omitempty"`
-	// +listType=set
-	// +optional
-	CurrentShardNames []string `json:"currentShardNames,omitempty"`
 }
 
 // +kubebuilder:object:root=true

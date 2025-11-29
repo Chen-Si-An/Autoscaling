@@ -61,9 +61,13 @@ spec:
                 type: object
               prometheus:
                 properties:
+                  nodeExporterPort:
+                    format: int32
+                    type: integer
                   url:
                     type: string
                 required:
+                - nodeExporterPort
                 - url
                 type: object
               router:

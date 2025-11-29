@@ -12,15 +12,22 @@ spec:
     namespace: default
     servicePort: 27017
 
-  scaleBounds:
+  shardScaleBounds:
     minShards: 1
     maxShards: 2
 
+  replicaScaleBounds:
+    minReplicas: 1
+    maxReplicas: 2
+
   policy:
     cpuTargetPercent: 60
-    tolerancePercent: 10
+    cpuTolerancePercent: 10
+    iowaitTargetPercent: 30
+    iowaitTolerancePercent: 5
     window: 5m
     cooldownSeconds: 300
 
   prometheus:
     url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+    nodeExporterPort: 9100
