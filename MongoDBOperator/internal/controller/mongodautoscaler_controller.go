@@ -154,51 +154,55 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		case avgCPU > cpuTarget+cpuTol || avgIOWait > iowaitTarget+iowaitTol:
 			if mda.Spec.ShardScaleBounds != nil && curShards < maxShards {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
 				mda.Status.LastDesiredShards = curShards + 1
 				mda.Status.LastDesiredReplicas = curReplicas
 				mda.Status.ScalingPhase = "ScalingUpCreatingShard"
 				mda.Status.TargetShardIdx = curShards
-				log.Info("Scaling UP shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards+1)
+				log.Info("Scaling up shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards+1)
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else if mda.Spec.ReplicaScaleBounds != nil && curReplicas < maxReplicas {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
 				mda.Status.LastDesiredShards = curShards
 				mda.Status.LastDesiredReplicas = curReplicas + 1
 				mda.Status.ScalingPhase = "ScalingUpCreatingReplica"
 				mda.Status.TargetReplicaCount = curReplicas + 1
-				log.Info("Scaling UP replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
+				log.Info("Scaling up replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else {
-				log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
 				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 			}
 		case avgCPU < cpuTarget-cpuTol && avgIOWait < iowaitTarget-iowaitTol:
 			if mda.Spec.ShardScaleBounds != nil && curReplicas > minReplicas {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
 				mda.Status.LastDesiredShards = curShards
 				mda.Status.LastDesiredReplicas = curReplicas - 1
 				mda.Status.ScalingPhase = "ScalingDownRemovingReplica"
 				mda.Status.TargetReplicaCount = curReplicas - 1
-				log.Info("Scaling DOWN replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
+				log.Info("Scaling down replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else if mda.Spec.ReplicaScaleBounds != nil && curShards > minShards {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
 				mda.Status.LastDesiredShards = curShards - 1
 				mda.Status.LastDesiredReplicas = curReplicas
 				mda.Status.ScalingPhase = "ScalingDownRemovingShard"
 				mda.Status.TargetShardIdx = curShards - 1
-				log.Info("Scaling DOWN shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards-1)
+				log.Info("Scaling down shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards-1)
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else {
-				log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
 				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 			}
 		default:
-			log.Info("No shard scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+			log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
 			return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 		}
 	}

@@ -41,7 +41,7 @@ type RouterPolicy struct {
 	// +required
 	CpuTargetPercent int `json:"cpuTargetPercent"`
 	// +required
-	TolerancePercent int `json:"tolerancePercent"`
+	CpuTolerancePercent int `json:"cpuTolerancePercent"`
 	// +required
 	Window string `json:"window"`
 	// +required
@@ -62,9 +62,6 @@ type MongosAutoscalerSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of MongosAutoscaler. Edit mongosautoscaler_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
 	// +required
 	Router RouterRef `json:"router"`
 	// +required
@@ -97,11 +94,11 @@ type MongosAutoscalerStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// +optional
-	LastScaleTime metav1.Time `json:"lastScaleTime,omitempty"`
-	// +optional
 	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
 	// +optional
 	LastDesiredReplicas int32 `json:"lastDesiredReplicas,omitempty"`
+	// +optional
+	LastScaleTime metav1.Time `json:"lastScaleTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

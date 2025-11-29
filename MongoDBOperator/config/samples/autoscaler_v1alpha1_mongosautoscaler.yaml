@@ -17,7 +17,7 @@ spec:
   
   policy:
     cpuTargetPercent: 60
-    tolerancePercent: 10
+    cpuTolerancePercent: 10
     window: 5m
     cooldownSeconds: 300
 

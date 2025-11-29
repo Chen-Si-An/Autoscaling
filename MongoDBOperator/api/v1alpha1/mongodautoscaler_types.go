@@ -104,6 +104,8 @@ type MongodAutoscalerStatus struct {
 	// +optional
 	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
 	// +optional
+	LastObservedIOWait string `json:"lastObservedIOWait,omitempty"`
+	// +optional
 	LastDesiredShards int32 `json:"lastDesiredShards,omitempty"`
 	// +optional
 	LastDesiredReplicas int32 `json:"lastDesiredReplicas,omitempty"`

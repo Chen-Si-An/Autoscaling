@@ -39,24 +39,20 @@ spec:
           spec:
             description: spec defines the desired state of MongosAutoscaler
             properties:
-              foo:
-                description: foo is an example field of MongosAutoscaler. Edit mongosautoscaler_types.go
-                  to remove/update
-                type: string
               policy:
                 properties:
                   cooldownSeconds:
                     type: integer
                   cpuTargetPercent:
                     type: integer
-                  tolerancePercent:
+                  cpuTolerancePercent:
                     type: integer
                   window:
                     type: string
                 required:
                 - cooldownSeconds
                 - cpuTargetPercent
-                - tolerancePercent
+                - cpuTolerancePercent
                 - window
                 type: object
               prometheus:

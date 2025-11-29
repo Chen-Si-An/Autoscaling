@@ -62,6 +62,29 @@ func (r *MongosAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	cooldown := time.Duration(msa.Spec.Policy.CooldownSeconds) * time.Second
+	if time.Since(msa.Status.LastScaleTime.Time) < cooldown {
+		return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+	}
+
+	cpuTarget := float64(msa.Spec.Policy.CpuTargetPercent)
+	cpuTol := float64(msa.Spec.Policy.CpuTolerancePercent)
+
+	prom, err := promclient.NewPromClient(msa.Spec.Prometheus.URL)
+	if err != nil {
+		log.Error(err, "failed to init Prometheus client")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	podRegex := fmt.Sprintf("%s.*", msa.Spec.Router.Name)
+	avgCPU, err := prom.QueryAvgCPU(ctx, msa.Spec.Router.Namespace, podRegex, msa.Spec.Policy.Window)
+	if err != nil {
+		log.Error(err, "prometheus query failed")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	minReplicas := msa.Spec.ScaleBounds.MinReplicas
+	maxReplicas := msa.Spec.ScaleBounds.MaxReplicas
 	var deploy appsv1.Deployment
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      msa.Spec.Router.Name,
@@ -75,57 +98,32 @@ func (r *MongosAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		log.Error(nil, "mongos deployment has nil replicas")
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
+	curReplicas := *deploy.Spec.Replicas
 
-	prom, err := promclient.NewPromClient(msa.Spec.Prometheus.URL)
-	if err != nil {
-		log.Error(err, "failed to init Prometheus client")
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
-	}
-
-	avgCPU, err := prom.QueryAvgCPU(ctx, msa.Spec.Router.Namespace, msa.Spec.Router.Name, msa.Spec.Policy.Window)
-	if err != nil {
-		log.Error(err, "prometheus query failed")
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
-	}
-
-	min := msa.Spec.ScaleBounds.MinReplicas
-	max := msa.Spec.ScaleBounds.MaxReplicas
-	curr := *deploy.Spec.Replicas
-	target := float64(msa.Spec.Policy.CpuTargetPercent)
-	tol := float64(msa.Spec.Policy.TolerancePercent)
-	cooldown := time.Duration(msa.Spec.Policy.CooldownSeconds) * time.Second
-
-	if time.Since(msa.Status.LastScaleTime.Time) < cooldown {
+	desiredReplicas := curReplicas
+	switch {
+	case avgCPU > cpuTarget+cpuTol && curReplicas < maxReplicas:
+		desiredReplicas = curReplicas + 1
+		log.Info("Scaling up mongos", "cpu", avgCPU, "oldReplicas", curReplicas, "newReplicas", desiredReplicas)
+	case avgCPU < cpuTarget-cpuTol && curReplicas > minReplicas:
+		desiredReplicas = curReplicas - 1
+		log.Info("Scaling down mongos", "cpu", avgCPU, "oldReplicas", curReplicas, "newReplicas", desiredReplicas)
+	default:
+		log.Info("No router scaling action", "cpu", avgCPU, "replicas", curReplicas)
 		return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 	}
 
-	desired := curr
-	switch {
-	case avgCPU > target+tol && curr < max:
-		desired = curr + 1
-		log.Info("Scaling up mongos", "from", curr, "to", desired, "cpu", avgCPU)
-	case avgCPU < target-tol && curr > min:
-		desired = curr - 1
-		log.Info("Scaling down mongos", "from", curr, "to", desired, "cpu", avgCPU)
-	default:
-		log.Info("Mongos replicas within target range, no scaling action needed", "currentReplicas", curr, "cpu", avgCPU)
+	deploy.Spec.Replicas = &desiredReplicas
+	if err := r.Update(ctx, &deploy); err != nil {
+		log.Error(err, "failed to update mongos deployment replicas")
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	if desired != curr {
-		deploy.Spec.Replicas = &desired
-		if err := r.Update(ctx, &deploy); err != nil {
-			log.Error(err, "failed to update mongos deployment replicas")
-			return ctrl.Result{RequeueAfter: time.Minute}, nil
-		}
-
-		msa.Status.LastScaleTime = metav1.Now()
-		msa.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
-		msa.Status.LastDesiredReplicas = desired
-		_ = r.Status().Update(ctx, msa)
-		return ctrl.Result{}, nil
-	}
-
-	return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+	msa.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
+	msa.Status.LastDesiredReplicas = desiredReplicas
+	msa.Status.LastScaleTime = metav1.Now()
+	_ = r.Status().Update(ctx, msa)
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
