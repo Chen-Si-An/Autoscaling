@@ -25,6 +25,7 @@ spec:
     cpuTolerancePercent: 10
     iowaitTargetPercent: 30
     iowaitTolerancePercent: 5
+    writeHeavyTargetPercent: 70
     window: 5m
     cooldownSeconds: 300
 

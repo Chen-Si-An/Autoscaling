@@ -67,6 +67,8 @@ spec:
                     type: integer
                   window:
                     type: string
+                  writeHeavyTargetPercent:
+                    type: integer
                 required:
                 - cooldownSeconds
                 - cpuTargetPercent
@@ -197,6 +199,8 @@ spec:
               lastObservedCPU:
                 type: string
               lastObservedIOWait:
+                type: string
+              lastObservedWriteRatio:
                 type: string
               lastScaleTime:
                 format: date-time

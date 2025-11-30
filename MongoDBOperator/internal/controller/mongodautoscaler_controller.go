@@ -87,6 +87,11 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	cpuTol := float64(mda.Spec.Policy.CpuTolerancePercent)
 	iowaitTarget := float64(mda.Spec.Policy.IOWaitTargetPercent)
 	iowaitTol := float64(mda.Spec.Policy.IOWaitTolerancePercent)
+	var writeHeavyTarget *float64
+	if mda.Spec.Policy.WriteHeavyTargetPercent != nil {
+		val := float64(*mda.Spec.Policy.WriteHeavyTargetPercent)
+		writeHeavyTarget = &val
+	}
 
 	if mda.Status.ScalingPhase == "Idle" {
 		balancerRunning, err := r.isBalancerRunning(ctx, mda)
@@ -130,6 +135,16 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
 
+		var avgWriteRatio *float64
+		if mda.Spec.Policy.WriteHeavyTargetPercent != nil {
+			ratio, err := prom.QueryAvgWriteRatio(ctx, mda.Spec.Policy.Window)
+			if err != nil {
+				log.Error(err, "prometheus query failed")
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+			avgWriteRatio = &ratio
+		}
+
 		var minShards, maxShards, minReplicas, maxReplicas int32
 		if mda.Spec.ShardScaleBounds != nil {
 			minShards = mda.Spec.ShardScaleBounds.MinShards
@@ -155,50 +170,98 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			if mda.Spec.ShardScaleBounds != nil && curShards < maxShards {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
 				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
+				if avgWriteRatio != nil {
+					ratioStr := fmt.Sprintf("%f", *avgWriteRatio)
+					mda.Status.LastObservedWriteRatio = &ratioStr
+				} else {
+					mda.Status.LastObservedWriteRatio = nil
+				}
 				mda.Status.LastDesiredShards = curShards + 1
 				mda.Status.LastDesiredReplicas = curReplicas
 				mda.Status.ScalingPhase = "ScalingUpCreatingShard"
 				mda.Status.TargetShardIdx = curShards
-				log.Info("Scaling up shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards+1)
+				if avgWriteRatio != nil {
+					log.Info("Scaling up shards", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "oldShards", curShards, "newShards", curShards+1)
+				} else {
+					log.Info("Scaling up shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards+1)
+				}
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
-			} else if mda.Spec.ReplicaScaleBounds != nil && curReplicas < maxReplicas {
+			} else if mda.Spec.ReplicaScaleBounds != nil && curReplicas < maxReplicas && (writeHeavyTarget == nil || avgWriteRatio != nil && *avgWriteRatio < *writeHeavyTarget) {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
 				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
+				if avgWriteRatio != nil {
+					ratioStr := fmt.Sprintf("%f", *avgWriteRatio)
+					mda.Status.LastObservedWriteRatio = &ratioStr
+				} else {
+					mda.Status.LastObservedWriteRatio = nil
+				}
 				mda.Status.LastDesiredShards = curShards
 				mda.Status.LastDesiredReplicas = curReplicas + 1
 				mda.Status.ScalingPhase = "ScalingUpCreatingReplica"
 				mda.Status.TargetReplicaCount = curReplicas + 1
-				log.Info("Scaling up replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
+				if avgWriteRatio != nil {
+					log.Info("Scaling up replicas", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
+				} else {
+					log.Info("Scaling up replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas+1)
+				}
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else {
-				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				if avgWriteRatio != nil {
+					log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "shards", curShards, "replicas", curReplicas)
+				} else {
+					log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				}
 				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 			}
 		case avgCPU < cpuTarget-cpuTol && avgIOWait < iowaitTarget-iowaitTol:
 			if mda.Spec.ShardScaleBounds != nil && curReplicas > minReplicas {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
 				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
+				if avgWriteRatio != nil {
+					ratioStr := fmt.Sprintf("%f", *avgWriteRatio)
+					mda.Status.LastObservedWriteRatio = &ratioStr
+				} else {
+					mda.Status.LastObservedWriteRatio = nil
+				}
 				mda.Status.LastDesiredShards = curShards
 				mda.Status.LastDesiredReplicas = curReplicas - 1
 				mda.Status.ScalingPhase = "ScalingDownRemovingReplica"
 				mda.Status.TargetReplicaCount = curReplicas - 1
-				log.Info("Scaling down replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
+				if avgWriteRatio != nil {
+					log.Info("Scaling down replicas", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
+				} else {
+					log.Info("Scaling down replicas", "cpu", avgCPU, "iowait", avgIOWait, "oldReplicas", curReplicas, "newReplicas", curReplicas-1)
+				}
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else if mda.Spec.ReplicaScaleBounds != nil && curShards > minShards {
 				mda.Status.LastObservedCPU = fmt.Sprintf("%f", avgCPU)
 				mda.Status.LastObservedIOWait = fmt.Sprintf("%f", avgIOWait)
+				if avgWriteRatio != nil {
+					ratioStr := fmt.Sprintf("%f", *avgWriteRatio)
+					mda.Status.LastObservedWriteRatio = &ratioStr
+				} else {
+					mda.Status.LastObservedWriteRatio = nil
+				}
 				mda.Status.LastDesiredShards = curShards - 1
 				mda.Status.LastDesiredReplicas = curReplicas
 				mda.Status.ScalingPhase = "ScalingDownRemovingShard"
 				mda.Status.TargetShardIdx = curShards - 1
-				log.Info("Scaling down shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards-1)
+				if avgWriteRatio != nil {
+					log.Info("Scaling down shards", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "oldShards", curShards, "newShards", curShards-1)
+				} else {
+					log.Info("Scaling down shards", "cpu", avgCPU, "iowait", avgIOWait, "oldShards", curShards, "newShards", curShards-1)
+				}
 				_ = r.Status().Update(ctx, mda)
 				return ctrl.Result{}, nil
 			} else {
-				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				if avgWriteRatio != nil {
+					log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "shards", curShards, "replicas", curReplicas)
+				} else {
+					log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+				}
 				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 			}
 		default:

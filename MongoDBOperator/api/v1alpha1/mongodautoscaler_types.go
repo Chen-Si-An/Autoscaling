@@ -55,6 +55,8 @@ type DataNodePolicy struct {
 	IOWaitTargetPercent int `json:"iowaitTargetPercent"`
 	// +required
 	IOWaitTolerancePercent int `json:"iowaitTolerancePercent"`
+	// +optional
+	WriteHeavyTargetPercent *int `json:"writeHeavyTargetPercent,omitempty"`
 	// +required
 	Window string `json:"window"`
 	// +required
@@ -105,6 +107,8 @@ type MongodAutoscalerStatus struct {
 	LastObservedCPU string `json:"lastObservedCPU,omitempty"`
 	// +optional
 	LastObservedIOWait string `json:"lastObservedIOWait,omitempty"`
+	// +optional
+	LastObservedWriteRatio *string `json:"lastObservedWriteRatio,omitempty"`
 	// +optional
 	LastDesiredShards int32 `json:"lastDesiredShards,omitempty"`
 	// +optional
