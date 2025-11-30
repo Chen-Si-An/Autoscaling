@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-exporter
+  labels:
+    app.kustomize.io/component: exporter
+    app.kubernetes.io/instance: my-mongodb-sharded
+    app.kubernetes.io/name: mongodb-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: exporter
+      app.kubernetes.io/instance: my-mongodb-sharded
+      app.kubernetes.io/name: mongodb-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: exporter
+        app.kubernetes.io/instance: my-mongodb-sharded
+        app.kubernetes.io/name: mongodb-exporter
+    spec:
+      containers:
+        - name: mongodb-exporter
+          image: bitnami/mongodb-exporter:latest
+          args:
+            - "--mongodb.uri=mongodb://root:mongodb123@my-mongodb-sharded:27017"
+            - "--collect-all"
+          ports:
+            - containerPort: 9216

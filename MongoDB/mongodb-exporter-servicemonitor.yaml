@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kps-mongodb-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/instance: kps
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: my-mongodb-sharded
+      app.kubernetes.io/name: mongodb-exporter
+  namespaceSelector:
+    matchNames:
+      - default
+  endpoints:
+    - port: metrics
+      interval: 30s

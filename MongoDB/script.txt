@@ -77,20 +77,27 @@ make manifests
 make docker-buildx PLATFORMS="linux/amd64" IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
 make deploy IMG=docker.io/b00611024/mongodb-autoscaler:v0.0.0
 kubectl rollout restart deploy/mongodboperator-controller-manager -n mongodboperator-system
+kubectl -n mongodboperator-system logs deploy/mongodboperator-controller-manager -c manager -f --timestamps
 
 kubectl create secret generic mongos-admin-uri \
   -n default \
   --from-literal=uri='mongodb://root:<password>@my-mongodb-sharded.default.svc.cluster.local:27017/admin?authSource=admin'
 
-kubectl -n mongodboperator-system logs deploy/mongodboperator-controller-manager -c manager -f --timestamps
 kubectl get pods -l job-name=removeshard-shard1
 
 
 
+kubectl port-forward svc/mongodb-exporter 9216:9216 -n default
+curl http://localhost:9216/metrics >> test.txt
 
-
-
-
+100 *
+sum(rate(mongodb_collstats_latencyStats_reads_ops{database="ycsb",collection="usertable"}[5m]))
+/
+(
+  sum(rate(mongodb_collstats_latencyStats_reads_ops{database="ycsb",collection="usertable"}[5m]))
+  +
+  sum(rate(mongodb_collstats_latencyStats_writes_ops{database="ycsb",collection="usertable"}[5m]))
+)
 
 
 kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
