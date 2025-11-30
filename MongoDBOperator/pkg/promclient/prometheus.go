@@ -71,12 +71,12 @@ func (p *PromClient) QueryAvgIOWait(ctx context.Context, endpoints []string, win
 func (p *PromClient) QueryAvgWriteRatio(ctx context.Context, window string) (float64, error) {
 	query := fmt.Sprintf(`
 	100 *
-	rate(mongodb_collstats_latencyStats_writes_ops[%s])
+	sum(rate(mongodb_collstats_latencyStats_writes_ops[%s]))
 	/ 
 	(
-	  rate(mongodb_collstats_latencyStats_writes_ops[%s])
+	  sum(rate(mongodb_collstats_latencyStats_writes_ops[%s]))
 	  + 
-	  rate(mongodb_collstats_latencyStats_reads_ops[%s])
+	  sum(rate(mongodb_collstats_latencyStats_reads_ops[%s]))
 	)
 	`, window, window, window)
 
