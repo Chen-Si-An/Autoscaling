@@ -1,2 +1,4 @@
 ipykernel
 matplotlib
+pathlib
+datetime

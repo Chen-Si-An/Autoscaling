@@ -1,0 +1,55 @@
+/usr/local/openjdk-11/bin/java  -classpath /YCSB/conf:/YCSB/core/target/core-0.18.0-SNAPSHOT.jar:/YCSB/core/target/dependency/HdrHistogram-2.1.12.jar:/YCSB/core/target/dependency/htrace-core4-4.1.0-incubating.jar:/YCSB/core/target/dependency/jackson-core-asl-1.9.4.jar:/YCSB/core/target/dependency/jackson-mapper-asl-1.9.4.jar:/YCSB/mongodb/target/mongodb-binding-0.18.0-SNAPSHOT.jar:/YCSB/mongodb/target/dependency/bson-5.1.0.jar:/YCSB/mongodb/target/dependency/bson-record-codec-5.1.0.jar:/YCSB/mongodb/target/dependency/logback-classic-1.1.2.jar:/YCSB/mongodb/target/dependency/logback-core-1.1.2.jar:/YCSB/mongodb/target/dependency/mongodb-async-driver-2.0.1.jar:/YCSB/mongodb/target/dependency/mongodb-driver-core-5.1.0.jar:/YCSB/mongodb/target/dependency/mongodb-driver-sync-5.1.0.jar:/YCSB/mongodb/target/dependency/slf4j-api-1.7.25.jar:/YCSB/mongodb/target/dependency/snappy-java-1.1.7.1.jar site.ycsb.Client -t -db site.ycsb.db.MongoDbClient -s -P workloads/workloadr -p mongodb.url=mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=nearest -threads 10
+Command line: -t -db site.ycsb.db.MongoDbClient -s -P workloads/workloadr -p mongodb.url=mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=nearest -threads 10
+YCSB Client 0.18.0-SNAPSHOT
+
+Loading workload...
+Starting test.
+2025-12-07 05:29:14:793 0 sec: 0 operations; est completion in 0 second 
+mongo client connection created with mongodb://root:mongodb123@my-mongodb-sharded:27017/ycsb?authSource=admin&readPreference=nearest
+DBWrapper: report latency for each error is false and specific error codes to track for latency are: []
+#OUTLIER 2025-12-07 05:29:24:744 10 sec: 44447 operations; 4444.26 current ops/sec; est completion in 3 minutes [READ: Count=44456, Max=273663, Min=748, Avg=2141.94, 50=1160, 90=1926, 99=42303, 99.9=61023, 99.99=243839] 
+2025-12-07 05:29:34:743 20 sec: 97225 operations; 5278.33 current ops/sec; est completion in 3 minutes [READ: Count=52773, Max=67903, Min=720, Avg=1890.78, 50=1082, 90=1796, 99=35135, 99.9=50239, 99.99=53535] 
+2025-12-07 05:29:44:743 30 sec: 148804 operations; 5157.9 current ops/sec; est completion in 2 minutes [READ: Count=51581, Max=73215, Min=742, Avg=1936.27, 50=1075, 90=1789, 99=38719, 99.9=60095, 99.99=63135] 
+2025-12-07 05:29:54:743 40 sec: 200358 operations; 5155.4 current ops/sec; est completion in 2 minutes [READ: Count=51556, Max=89535, Min=737, Avg=1936.96, 50=1067, 90=1770, 99=42111, 99.9=73727, 99.99=79999] 
+2025-12-07 05:30:04:743 50 sec: 254007 operations; 5364.9 current ops/sec; est completion in 2 minutes [READ: Count=53648, Max=64191, Min=728, Avg=1861.27, 50=1073, 90=1784, 99=38879, 99.9=60831, 99.99=62719] 
+2025-12-07 05:30:14:743 60 sec: 305246 operations; 5123.9 current ops/sec; est completion in 2 minutes [READ: Count=51238, Max=65727, Min=741, Avg=1949.13, 50=1078, 90=1811, 99=38079, 99.9=60159, 99.99=63135] 
+2025-12-07 05:30:24:743 70 sec: 356883 operations; 5163.7 current ops/sec; est completion in 2 minutes [READ: Count=51639, Max=86975, Min=702, Avg=1934.02, 50=1067, 90=1766, 99=41599, 99.9=73727, 99.99=78911] 
+2025-12-07 05:30:34:743 80 sec: 410385 operations; 5350.2 current ops/sec; est completion in 1 minute [READ: Count=53501, Max=63743, Min=734, Avg=1866.59, 50=1071, 90=1778, 99=38015, 99.9=60895, 99.99=63231] 
+2025-12-07 05:30:44:743 90 sec: 461742 operations; 5135.7 current ops/sec; est completion in 1 minute [READ: Count=51352, Max=62911, Min=740, Avg=1944.8, 50=1080, 90=1785, 99=38623, 99.9=60447, 99.99=62111] 
+2025-12-07 05:30:54:743 100 sec: 513229 operations; 5148.7 current ops/sec; est completion in 1 minute [READ: Count=51493, Max=82879, Min=721, Avg=1939.63, 50=1067, 90=1761, 99=41983, 99.9=74367, 99.99=82559] 
+2025-12-07 05:31:04:743 110 sec: 567059 operations; 5383 current ops/sec; est completion in 1 minute [READ: Count=53830, Max=64063, Min=740, Avg=1855.23, 50=1072, 90=1770, 99=35039, 99.9=60831, 99.99=63167] 
+2025-12-07 05:31:14:743 120 sec: 618774 operations; 5171.5 current ops/sec; est completion in 1 minute [READ: Count=51712, Max=63743, Min=738, Avg=1931.22, 50=1074, 90=1782, 99=36255, 99.9=60319, 99.99=62399] 
+2025-12-07 05:31:24:743 130 sec: 670564 operations; 5179 current ops/sec; est completion in 1 minute [READ: Count=51788, Max=85887, Min=737, Avg=1928.32, 50=1068, 90=1743, 99=46495, 99.9=74495, 99.99=84223] 
+2025-12-07 05:31:34:743 140 sec: 724377 operations; 5381.3 current ops/sec; est completion in 54 seconds [READ: Count=53818, Max=66623, Min=726, Avg=1855.83, 50=1070, 90=1771, 99=36607, 99.9=49759, 99.99=62431] 
+2025-12-07 05:31:44:743 150 sec: 775834 operations; 5145.7 current ops/sec; est completion in 44 seconds [READ: Count=51456, Max=64095, Min=733, Avg=1940.93, 50=1077, 90=1796, 99=39743, 99.9=59967, 99.99=62111] 
+2025-12-07 05:31:54:743 160 sec: 827307 operations; 5147.3 current ops/sec; est completion in 34 seconds [READ: Count=51472, Max=89471, Min=716, Avg=1940.3, 50=1066, 90=1761, 99=41695, 99.9=74303, 99.99=88703] 
+2025-12-07 05:32:04:743 170 sec: 880797 operations; 5349 current ops/sec; est completion in 24 seconds [READ: Count=53490, Max=65983, Min=721, Avg=1867.02, 50=1076, 90=1780, 99=37695, 99.9=60191, 99.99=64831] 
+2025-12-07 05:32:14:743 180 sec: 932444 operations; 5164.7 current ops/sec; est completion in 14 seconds [READ: Count=51650, Max=68351, Min=721, Avg=1933.71, 50=1075, 90=1783, 99=40351, 99.9=60223, 99.99=62623] 
+2025-12-07 05:32:24:743 190 sec: 983867 operations; 5142.3 current ops/sec; est completion in 4 second [READ: Count=51419, Max=84031, Min=724, Avg=1942.22, 50=1071, 90=1757, 99=43967, 99.9=74495, 99.99=81279] 
+#OUTLIER 2025-12-07 05:32:29:178 194 sec: 1000000 operations; 3636.83 current ops/sec; [READ: Count=16128, Max=64383, Min=731, Avg=1528.71, 50=1027, 90=1715, 99=14511, 99.9=46431, 99.99=63743] [CLEANUP: Count=10, Max=8519, Min=1, Avg=853.3, 50=1, 90=6, 99=8519, 99.9=8519, 99.99=8519] 
+[OVERALL], RunTime(ms), 194436
+[OVERALL], Throughput(ops/sec), 5143.080499495978
+[TOTAL_GCS_Copy], Count, 231
+[TOTAL_GC_TIME_Copy], Time(ms), 329
+[TOTAL_GC_TIME_%_Copy], Time(%), 0.16920734843341767
+[TOTAL_GCS_MarkSweepCompact], Count, 0
+[TOTAL_GC_TIME_MarkSweepCompact], Time(ms), 0
+[TOTAL_GC_TIME_%_MarkSweepCompact], Time(%), 0.0
+[TOTAL_GCs], Count, 231
+[TOTAL_GC_TIME], Time(ms), 329
+[TOTAL_GC_TIME_%], Time(%), 0.16920734843341767
+[READ], Operations, 1000000
+[READ], AverageLatency(us), 1917.429907
+[READ], MinLatency(us), 702
+[READ], MaxLatency(us), 273663
+[READ], 50thPercentileLatency(us), 1075
+[READ], 95thPercentileLatency(us), 1950
+[READ], 99thPercentileLatency(us), 39935
+[READ], Return=OK, 1000000
+[CLEANUP], Operations, 10
+[CLEANUP], AverageLatency(us), 853.3
+[CLEANUP], MinLatency(us), 1
+[CLEANUP], MaxLatency(us), 8519
+[CLEANUP], 50thPercentileLatency(us), 1
+[CLEANUP], 95thPercentileLatency(us), 8519
+[CLEANUP], 99thPercentileLatency(us), 8519
