@@ -26,7 +26,7 @@ DBWrapper: report latency for each error is false and specific error codes to tr
 2025-12-07 03:49:34:273 170 sec: 790534 operations; 7291.3 current ops/sec; est completion in 46 seconds [READ: Count=72915, Max=417279, Min=795, Avg=1368.9, 50=1115, 90=1738, 99=2269, 99.9=32495, 99.99=210303] 
 2025-12-07 03:49:44:273 180 sec: 864635 operations; 7410.1 current ops/sec; est completion in 29 seconds [READ: Count=74103, Max=71231, Min=796, Avg=1346.93, 50=1113, 90=1764, 99=2399, 99.9=32127, 99.99=43679] 
 2025-12-07 03:49:54:273 190 sec: 943258 operations; 7862.3 current ops/sec; est completion in 12 seconds [READ: Count=78623, Max=73407, Min=762, Avg=1269.32, 50=1114, 90=1751, 99=2169, 99.9=24575, 99.99=55455] 
-2025-12-07 03:50:02:121 197 sec: 1000000 operations; 7229.2 current ops/sec; [READ: Count=56735, Max=40927, Min=792, Avg=1339.18, 50=1106, 90=1751, 99=2311, 99.9=33503, 99.99=39583] [CLEANUP: Count=10, Max=7907, Min=1, Avg=792.1, 50=1, 90=7, 99=7907, 99.9=7907, 99.99=7907] 
+#OUTLIER 2025-12-07 03:50:02:121 197 sec: 1000000 operations; 7229.2 current ops/sec; [READ: Count=56735, Max=40927, Min=792, Avg=1339.18, 50=1106, 90=1751, 99=2311, 99.9=33503, 99.99=39583] [CLEANUP: Count=10, Max=7907, Min=1, Avg=792.1, 50=1, 90=7, 99=7907, 99.9=7907, 99.99=7907] 
 [OVERALL], RunTime(ms), 197849
 [OVERALL], Throughput(ops/sec), 5054.359637905675
 [TOTAL_GCS_Copy], Count, 224
