@@ -265,7 +265,11 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 			}
 		default:
-			log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+			if avgWriteRatio != nil {
+				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "writeRatio", *avgWriteRatio, "shards", curShards, "replicas", curReplicas)
+			} else {
+				log.Info("No datanode scaling action", "cpu", avgCPU, "iowait", avgIOWait, "shards", curShards, "replicas", curReplicas)
+			}
 			return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 		}
 	}
