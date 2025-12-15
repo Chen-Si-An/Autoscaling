@@ -142,7 +142,8 @@ func (r *MongodAutoscalerReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				log.Error(err, "prometheus query failed")
 				return ctrl.Result{RequeueAfter: time.Minute}, nil
 			}
-			avgWriteRatio = &ratio
+			avgWriteRatio = new(float64)
+			*avgWriteRatio = ratio
 		}
 
 		var minShards, maxShards, minReplicas, maxReplicas int32
