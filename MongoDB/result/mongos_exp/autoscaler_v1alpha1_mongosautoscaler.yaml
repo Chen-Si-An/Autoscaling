@@ -1,0 +1,26 @@
+apiVersion: autoscaler.mongodb.io/v1alpha1
+kind: MongosAutoscaler
+metadata:
+  labels:
+    app.kubernetes.io/name: mongodboperator
+    app.kubernetes.io/managed-by: kustomize
+  name: mongosautoscaler-sample
+spec:
+  # TODO(user): Add fields here
+  router:
+    name: my-mongodb-sharded-mongos
+    namespace: default
+
+  scaleBounds:
+    minReplicas: 1
+    maxReplicas: 3
+  
+  policy:
+    cpuTargetPercent: 60
+    cpuTolerancePercent: 10
+    window: 5m
+    cooldownSeconds: 300
+
+  prometheus:
+    url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+    nodeExporterPort: 9100
